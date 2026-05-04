@@ -1,6 +1,6 @@
 # Ultra Creative Suite
 
-**The world's first professional video editor built for blind users — and equally usable by sighted users.**
+**The world's first professional video editor that is fully accessible to blind, low-vision, and sighted users — without compromise.**
 
 Built by a blind developer. Tested daily with JAWS for Windows.
 
@@ -8,9 +8,9 @@ Built by a blind developer. Tested daily with JAWS for Windows.
 
 ## What is this?
 
-Ultra Creative Suite is a fully accessible video editor for Windows, built from the ground up with screen reader compatibility as the primary design requirement — not an afterthought.
+Ultra Creative Suite is a professional video editor for Windows, built from the ground up with full accessibility as a core requirement — not an afterthought.
 
-Blind and visually impaired users can independently create professional-quality videos, edit timelines, apply AI effects, transcribe audio, and render 4K output — all without needing sighted assistance.
+Every feature works for blind, low-vision, and sighted users equally. Blind users can independently create professional-quality videos, edit timelines, apply AI effects, transcribe audio, and render 4K output — without sighted assistance, and without a stripped-down "accessible mode" that hides features.
 
 > "I am blind and I use JAWS for Windows. I built this because no professional video editor on the market is actually usable with a screen reader."
 > — Author
