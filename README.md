@@ -17,6 +17,16 @@ Every feature works for blind, low-vision, and sighted users equally. Blind user
 
 ---
 
+## Demo
+
+This video was created entirely by the author — who is blind — using Ultra Creative Suite with JAWS for Windows. No sighted assistance.
+
+[![Ultra Creative Suite Demo](https://img.youtube.com/vi/K1mXPN4hEFs/maxresdefault.jpg)](https://www.youtube.com/watch?v=K1mXPN4hEFs)
+
+> A children's song video: lyrics analyzed by AI, stock footage automatically selected and downloaded, mood-based color grading applied, ambient sounds mixed, rendered to 4K. Created independently by a blind user.
+
+---
+
 ## Key Accessibility Features
 
 **Native Win32 ListView timeline** — Uses the same Windows control as File Explorer. JAWS and NVDA read every clip natively without plugins or workarounds: clip name, type, duration, position, and AI-generated audio description.
@@ -171,7 +181,7 @@ See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) file.
+GPL-3.0 License — see [LICENSE](LICENSE) file.
 
 ---
 
