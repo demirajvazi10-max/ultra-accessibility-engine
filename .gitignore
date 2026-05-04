@@ -1,0 +1,87 @@
+# Visual Studio / MSBuild
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build output
+bin/
+obj/
+out/
+publish/
+
+# .NET
+*.nupkg
+*.snupkg
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# NuGet
+packages/
+*.nuget.props
+*.nuget.targets
+
+# FFmpeg binary (download separately)
+Ffmpeg/ffmpeg.exe
+Ffmpeg/ffprobe.exe
+Ffmpeg/*.dll
+
+# API keys and secrets
+appsettings.local.json
+secrets.json
+*.apikey
+pixabay_key.txt
+freesound_key.txt
+cloudflare_key.txt
+
+# Temp files and project saves
+*.iskra
+*.tmp
+*.temp
+UVE_Render_*/
+UVE_Story_*/
+AI_*.mp4
+trimmed_*.mp4
+mixed_audio_*.mp3
+ambient_*.flac
+ambient_*.wav
+transition_pop_*.wav
+transition_pop_*.mp3
+
+# User-specific render output
+*.mp4
+*.wav
+*.mp3
+*.flac
+!Sounds/
+!Assets/
+
+# Ollama / AI models (large files)
+models/
+*.gguf
+*.bin
+
+# faster-whisper
+whisper_cache/
+__pycache__/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# Test results
+TestResults/
+*.trx
+*.coverage
