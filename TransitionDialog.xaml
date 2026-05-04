@@ -1,0 +1,31 @@
+﻿<Window x:Class="UltraVideoEditor.TransitionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Dodaj tranziciju" Height="200" Width="350"
+        WindowStartupLocation="CenterOwner"
+        Background="#2D2D2D">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Broj prvog klipa (tranzicija će biti između njega i sledećeg):" 
+                   Foreground="White" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,15"/>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+            <TextBox x:Name="txtClipNumber" Width="60" Height="30" Text="1" 
+                     TextAlignment="Center" FontSize="14" Background="#1E1E1E" Foreground="White"/>
+            <TextBlock Text=" / " Foreground="White" VerticalAlignment="Center" Margin="5,0"/>
+            <TextBlock x:Name="txtMaxClips" Foreground="Yellow" VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button x:Name="btnOk" Content="✅ POTVRDI" Click="Ok_Click" Width="100" Height="35" 
+                    Background="#2E7D32" Foreground="White" Margin="0,0,10,0"/>
+            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+                    Background="#B71C1C" Foreground="White"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,115 @@
+<Window x:Class="UltraVideoEditor.SkiaAnimationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Kreiraj animaciju teksta" Height="520" Width="500"
+        WindowStartupLocation="CenterOwner" Background="#1E1E1E"
+        AutomationProperties.Name="Dijalog za kreiranje animacije teksta">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Kreiraj animaciju teksta" FontSize="18" FontWeight="Bold"
+                   Foreground="#00E676" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+
+        <!-- Tekst -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <TextBlock Text="Tekst animacije:" Foreground="White" Margin="0,0,0,4"/>
+            <TextBox x:Name="txtText" Height="32" Background="#2D2D2D" Foreground="White"
+                     FontSize="14" Padding="5"
+                     AutomationProperties.Name="Tekst koji ce biti animiran"
+                     AutomationProperties.HelpText="Unesi tekst koji hoces da se animira"/>
+        </StackPanel>
+
+        <!-- Stil animacije -->
+        <StackPanel Grid.Row="2" Margin="0,0,0,10">
+            <TextBlock Text="Stil animacije:" Foreground="White" Margin="0,0,0,4"/>
+            <ComboBox x:Name="cmbStyle" Height="32" Background="#2D2D2D" Foreground="White"
+                      AutomationProperties.Name="Stil animacije. Pritisni F1 za opis stila.">
+                <ComboBoxItem Content="FadeIn     - Tekst se postepeno pojavljuje i nestaje" Tag="FadeIn"/>
+                <ComboBoxItem Content="SlideLeft  - Tekst ulazi s desna, izlazi ulevo" Tag="SlideLeft"/>
+                <ComboBoxItem Content="SlideUp    - Tekst ulazi odozdo, izlazi nagore" Tag="SlideUp"/>
+                <ComboBoxItem Content="Bounce     - Tekst skace gore-dole" Tag="Bounce"/>
+                <ComboBoxItem Content="ZoomIn     - Tekst se uvecava iz centra" Tag="ZoomIn"/>
+                <ComboBoxItem Content="Stars      - Zvezde u pozadini, tekst se pojavljuje" Tag="Stars"/>
+                <ComboBoxItem Content="Rainbow    - Svako slovo drugom bojom dugine" Tag="Rainbow"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Boja teksta (COMBO BOX umjesto TEXT BOX) -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Boja teksta:" Foreground="White" Width="160" VerticalAlignment="Center"/>
+            <ComboBox x:Name="cmbTextColor" Width="140" Height="30" Background="#2D2D2D" Foreground="White"
+                      AutomationProperties.Name="Boja teksta, bira se iz liste">
+                <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF" IsSelected="True"/>
+                <ComboBoxItem Content="⚫ Crna" Tag="#000000"/>
+                <ComboBoxItem Content="🔴 Crvena" Tag="#FF0000"/>
+                <ComboBoxItem Content="🟢 Zelena" Tag="#00FF00"/>
+                <ComboBoxItem Content="🔵 Plava" Tag="#0000FF"/>
+                <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
+                <ComboBoxItem Content="🟠 Narandžasta" Tag="#FFA500"/>
+                <ComboBoxItem Content="🟣 Ljubičasta" Tag="#800080"/>
+                <ComboBoxItem Content="🩷 Roze" Tag="#FFC0CB"/>
+                <ComboBoxItem Content="🤎 Smeđa" Tag="#8B4513"/>
+                <ComboBoxItem Content="🩶 Siva" Tag="#808080"/>
+                <ComboBoxItem Content="💛 Zlatna" Tag="#FFD700"/>
+                <ComboBoxItem Content="💙 Tamnoplava" Tag="#00008B"/>
+                <ComboBoxItem Content="💚 Tamnozelena" Tag="#006400"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Boja pozadine (COMBO BOX umjesto TEXT BOX) -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Boja pozadine:" Foreground="White" Width="160" VerticalAlignment="Center"/>
+            <ComboBox x:Name="cmbBgColor" Width="140" Height="30" Background="#2D2D2D" Foreground="White"
+                      AutomationProperties.Name="Boja pozadine, bira se iz liste">
+                <ComboBoxItem Content="⚫ Crna" Tag="#000000" IsSelected="True"/>
+                <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF"/>
+                <ComboBoxItem Content="🔴 Crvena" Tag="#FF0000"/>
+                <ComboBoxItem Content="🟢 Zelena" Tag="#00FF00"/>
+                <ComboBoxItem Content="🔵 Plava" Tag="#0000FF"/>
+                <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
+                <ComboBoxItem Content="🟠 Narandžasta" Tag="#FFA500"/>
+                <ComboBoxItem Content="🟣 Ljubičasta" Tag="#800080"/>
+                <ComboBoxItem Content="🩶 Siva" Tag="#808080"/>
+                <ComboBoxItem Content="💙 Tamnoplava" Tag="#00008B"/>
+                <ComboBoxItem Content="💚 Tamnozelena" Tag="#006400"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Trajanje -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="0,0,0,10">
+            <TextBlock Text="Trajanje (sekundi):" Foreground="White" Width="160" VerticalAlignment="Center"/>
+            <TextBox x:Name="txtDuration" Width="80" Height="30" Background="#2D2D2D"
+                     Foreground="White" Padding="5" Text="5"
+                     AutomationProperties.Name="Trajanje animacije u sekundama"/>
+        </StackPanel>
+
+        <!-- Info -->
+        <Border Grid.Row="6" Background="#2A2A2A" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+            <TextBlock x:Name="txtInfo" Foreground="#AAAAAA" TextWrapping="Wrap" FontSize="11"
+                       Text="Odaberi stil i pritisni Enter ili KREIRAJ. Animacija se renderuje frame-by-frame i izvozi kao MP4 video klip koji se dodaje na timeline."
+                       AutomationProperties.LiveSetting="Polite"/>
+        </Border>
+
+        <!-- Dugmad -->
+        <StackPanel Grid.Row="8" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+            <Button x:Name="btnCreate" Content="KREIRAJ" Click="Create_Click"
+                    Width="110" Height="36" Background="#2E7D32" Foreground="White"
+                    FontSize="13" FontWeight="Bold" Margin="0,0,10,0"
+                    AutomationProperties.Name="Kreiraj animaciju i dodaj na timeline"/>
+            <Button x:Name="btnCancel" Content="OTKAZI" Click="Cancel_Click"
+                    Width="110" Height="36" Background="#B71C1C" Foreground="White"
+                    FontSize="13" FontWeight="Bold"
+                    AutomationProperties.Name="Otkazi"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,46 @@
+﻿<Window x:Class="UltraVideoEditor.LogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="📋 Log - Istorija događaja" Height="450" Width="700"
+        WindowStartupLocation="CenterOwner"
+        Background="#1E1E1E"
+        AutomationProperties.Name="Prozor sa istorijom log poruka">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="📋 ISTORIJA DOGAĐAJA" FontSize="16" FontWeight="Bold" 
+                       Foreground="#00E676" VerticalAlignment="Center"/>
+            <Button x:Name="btnCopyAll" Content="📋 KOPIRAJ SVE" Click="CopyAll_Click"
+                    Width="120" Height="30" Background="#4A148C" Foreground="White" Margin="20,0,5,0"/>
+            <Button x:Name="btnClear" Content="🗑 OBRIŠI" Click="Clear_Click"
+                    Width="100" Height="30" Background="#B71C1C" Foreground="White"/>
+        </StackPanel>
+
+        <ListBox x:Name="lstLog" Grid.Row="1" Background="#2D2D2D" Foreground="#00FF00"
+                 FontFamily="Consolas" FontSize="12"
+                 AutomationProperties.Name="Lista log poruka, istorija događaja"
+                 AutomationProperties.HelpText="Koristite strelice gore/dole za navigaciju kroz poruke. Ctrl+C za kopiranje selektovane poruke.">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding Time}" Width="60" Foreground="#FF9800"/>
+                        <TextBlock Text=" - " Foreground="Gray"/>
+                        <TextBlock Text="{Binding Message}" Foreground="#00FF00" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <TextBlock x:Name="txtStatus" Text="Spreman" Foreground="#00E676" FontSize="11"/>
+            <Button x:Name="btnClose" Content="❌ ZATVORI" Click="Close_Click"
+                    Width="100" Height="30" Background="#333" Foreground="White" Margin="20,0,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>

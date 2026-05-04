@@ -1,188 +1,221 @@
-# Ultra Creative Suite
+# Ultra Video Editor — Korisnički priručnik
 
-**The world's first professional video editor that is fully accessible to blind, low-vision, and sighted users — without compromise.**
-
-Built by a blind developer. Tested daily with JAWS for Windows.
-
----
-
-## What is this?
-
-Ultra Creative Suite is a professional video editor for Windows, built from the ground up with full accessibility as a core requirement — not an afterthought.
-
-Every feature works for blind, low-vision, and sighted users equally. Blind users can independently create professional-quality videos, edit timelines, apply AI effects, transcribe audio, and render 4K output — without sighted assistance, and without a stripped-down "accessible mode" that hides features.
-
-> "I am blind and I use JAWS for Windows. I built this because no professional video editor on the market is actually usable with a screen reader."
-> — Author
+**Verzija:** 6.0  
+**Autor projekta:** Tvoj projekat  
+**Pristupačnost:** 100% kompatibilan sa JAWS for Windows, NVDA i svim čitačima ekrana
 
 ---
 
-## Demo
+## O programu
 
-This video was created entirely by the author — who is blind — using Ultra Creative Suite with JAWS for Windows. No sighted assistance.
+Ultra Video Editor je video editor napravljen od temelja sa idejom da bude **jednako pristupačan slepim i videće osobama**. Koristi Win32 native ListView kontrolu za timeline — istu tehnologiju kao Windows Explorer — što znači da JAWS čita svaki klip nativno, bez dodatnih podešavanja.
 
-[![Ultra Creative Suite Demo](https://img.youtube.com/vi/K1mXPN4hEFs/maxresdefault.jpg)](https://www.youtube.com/watch?v=K1mXPN4hEFs)
-
-> A children's song video: lyrics analyzed by AI, stock footage automatically selected and downloaded, mood-based color grading applied, ambient sounds mixed, rendered to 4K. Created independently by a blind user.
+Program je posebno optimizovan za pravljenje **dečijih edukativnih videozapisa** sa muzičkim sadržajem, AI generisanim slikama i animiranim tekstom.
 
 ---
 
-## Key Accessibility Features
+## Instalacija
 
-**Native Win32 ListView timeline** — Uses the same Windows control as File Explorer. JAWS and NVDA read every clip natively without plugins or workarounds: clip name, type, duration, position, and AI-generated audio description.
+### Preduslovi
+- Windows 10 ili 11 (64-bit)
+- .NET 8.0 Runtime ([download](https://dotnet.microsoft.com/download))
+- **FFmpeg** — obavezan za render i animacije
 
-**Live region status bar** — Every action, render progress, error, and confirmation is announced automatically. No need to manually navigate to find what happened.
+### Instalacija FFmpeg
+1. Preuzmi FFmpeg sa [ffmpeg.org](https://ffmpeg.org/download.html)
+2. Raspakuj i kopiraj `ffmpeg.exe` u folder `Ffmpeg\` unutar foldera programa
+3. Putanja treba da bude: `UltraVideoEditor\Ffmpeg\ffmpeg.exe`
 
-**Full keyboard control** — Every feature is reachable without a mouse. No drag-and-drop required for any core workflow.
-
-**AI audio descriptions** — Every image and video clip on the timeline receives an AI-generated description that JAWS reads aloud, giving blind users full situational awareness of visual content.
-
-**Screen reader optimized dialogs** — All dialogs use proper focus management, labeled controls, and logical tab order.
+### VLC (opcionalno, za preview)
+Program koristi LibVLC za preview fajlova. Ako preview ne radi, instaliraj [VLC media player](https://www.videolan.org/).
 
 ---
 
-## Technical Stack
+## Pokretanje i osnovni tok rada
 
-| Component | Technology |
+### Korak 1 — Sačuvaj projekat
+Pre dodavanja sadržaja, uvek prvo sačuvaj projekat: **Fajl → Sačuvaj projekat** (Ctrl+S). Program čuva sve u `.iskra` fajlovima.
+
+### Korak 2 — Dodaj sadržaj
+- **Ctrl+O** — dodaj video/slike fajlove
+- **AI tab** — generiši slike opisom teksta
+- **Animacije tab** — napravi animirani tekst
+
+### Korak 3 — Uredi timeline
+Koristi strelice gore/dole za navigaciju kroz klipove. Svaki klip JAWS čita kao: ime, tip, trajanje, pozicija i audio opis slike.
+
+### Korak 4 — Render
+**Ctrl+R** ili dugme Render — sačuva finalni video kao MP4.
+
+---
+
+## Pristupačnost — JAWS i čitači ekrana
+
+### Timeline (Win32 ListView)
+Timeline lista koristi **Win32 native kontrolu** — istu kao Windows Explorer. JAWS čita:
+- Redni broj klipa
+- Ime fajla
+- Tip (Video / Slika / Audio)
+- Trajanje
+- Početak i kraj na audio osi
+- **Audio opis slike** (AI generisani opis na srpskom)
+
+### Statusni bar
+Zeleni tekst na dnu ekrana je **live region** — JAWS automatski čita sve promene. Sve akcije, greške i potvrde se najavljuju ovde.
+
+### Prečice na tastaturi
+
+| Prečica | Akcija |
 |---|---|
-| Language | C# / .NET 8 |
-| UI Framework | WPF (Windows Presentation Foundation) |
-| Render Engine | FFmpeg with NVENC GPU acceleration |
-| Audio | NAudio |
-| Video Preview | LibVLC |
-| AI Transcription | faster-whisper (large-v3 model) |
-| AI Text/Story | Ollama (llama3.2, local inference) |
-| Image Generation | Cloudflare Workers AI / Pollinations.ai |
-| Stock Media | Pixabay API / Freesound API |
-| Screen Reader | JAWS for Windows (primary), NVDA (compatible) |
-| Platform | Windows 10/11 (64-bit) |
-
----
-
-## Core Features
-
-### AIVideoCreator
-Generates a complete video from a single audio file (song):
-- AI analyzes lyrics and detects mood, theme, and energy level
-- Automatically downloads matching stock footage from Pixabay
-- Applies mood-based color grading (warm, cool, desaturated, vivid)
-- Multi-clip scenes: long scenes use 2–4 different clips for visual variety
-- Ken Burns effect with smart crop (subject detection via FFmpeg cropdetect)
-- Ambient sound mixing with audio ducking (sidechain compression)
-- Karaoke subtitle burn-in with Whisper timestamp sync
-- B-roll intelligence for instrumental sections
-- Preview list before render — JAWS reads all scenes with timing
-
-### Render Engine
-- NVENC GPU-accelerated encoding (RTX/GTX cards)
-- Automatic fallback to CPU (libx264) if GPU unavailable
-- 4K (3840×2160) output tested on RTX 2060 Max-Q
-- Parallel clip processing (up to 4 simultaneous)
-- Smart zoompan pipeline — trim before filter prevents 30-minute CPU hangs
-- FastRender mode for quick previews
-
-### AI Transcription
-- faster-whisper-xxl integration (large-v3 model)
-- float16 compute type on CUDA for GPU-accelerated transcription
-- SRT subtitle output with timestamp synchronization
-- Serbian language support
-
-### Timeline Editor
-- Win32 native ListView (JAWS/NVDA compatible out of the box)
-- Undo/redo system
-- Keyframe animation support
-- Audio waveform display
-- Export profiles: YouTube 1080p/4K, TikTok 9:16, Instagram 1:1, Compact
-
----
-
-## Hardware Tested On
-
-- **CPU:** Intel Core i9-10885H
-- **GPU:** NVIDIA RTX 2060 Max-Q (NVENC)
-- **RAM:** 32GB DDR4 3200MHz
-- **Output:** 4K H.264 via NVENC
-
----
-
-## Installation
-
-### Prerequisites
-- Windows 10 or 11 (64-bit)
-- [.NET 8.0 Runtime](https://dotnet.microsoft.com/download)
-- FFmpeg (place `ffmpeg.exe` in `Ffmpeg\` subfolder)
-- VLC media player (for preview)
-
-### Optional (for AI features)
-- [Ollama](https://ollama.ai) with `llama3.2` model
-- Cloudflare Workers AI API key (for image generation)
-- faster-whisper-xxl (for transcription)
-
----
-
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| Arrow Up/Down | Navigate timeline clips |
-| Page Up/Down | Jump 5 clips |
+| Strelice gore/dole | Navigacija kroz klipove |
+| Page Up / Page Down | Skok 5 klipova gore/dole |
 | Ctrl+Space | Play / Pause |
-| Ctrl+R / F5 | Render video |
-| Ctrl+O | Open media files |
-| Ctrl+S | Save project |
-| Ctrl+Z / Ctrl+Y | Undo / Redo |
-| Ctrl+C / V / X | Copy / Paste / Cut clip |
-| Delete | Remove selected clip |
-| Ctrl+K | Add keyframe |
-| Ctrl+M | Add marker |
-| Ctrl+Shift+A | Toggle accessibility mode |
-| Menu key / Right-click | Context menu on timeline |
+| Ctrl+R | Pokreni render |
+| Ctrl+O | Otvori fajlove |
+| Ctrl+S | Sačuvaj projekat |
+| Ctrl+Z | Poništi (Undo) |
+| Ctrl+Y | Ponovi (Redo) |
+| Ctrl+C | Kopiraj klip |
+| Ctrl+V | Zalepi klip |
+| Ctrl+X | Seci klip |
+| Delete | Obriši selektovani klip |
+| Ctrl+K | Dodaj keyframe |
+| Ctrl+M | Dodaj marker |
+| F5 | Pokreni render |
+| Ctrl+Shift+A | Uključi/isključi pristupačni mod |
+
+### Kontekstni meni (desni klik ili meni tipka)
+Na timeline-u: seci, kopiraj, zalepi, obriši, podesi trajanje, postavi na audio osu, pročitaj opis slike.  
+Na listi tranzicija: primeni na klip, primeni na sve, pročitaj opis efekta.
 
 ---
 
-## Project Structure
+## AI funkcije
 
-```
-UltraVideoEditor/
-├── RenderEngine.cs           # FFmpeg pipeline, NVENC, GPU/CPU encoding
-├── CinematicProcessor.cs     # Ken Burns, SmartCrop, AudioDucking, VisionAI
-├── AIVideoCreator.xaml.cs    # AI video generation engine
-├── AITranscription.cs        # faster-whisper integration
-├── MainWindow.xaml.cs        # Main UI, Win32 ListView, accessibility
-├── Models.cs                 # Data models (TimelineItem, SubtitleItem, etc.)
-├── NativeListViewBridge.cs   # Win32 interop for accessible timeline
-├── BeatDetection.cs          # Audio beat/rhythm analysis
-├── OllamaClient.cs           # Local AI inference (llama3.2)
-├── FreesoundClient.cs        # Ambient sound library integration
-├── HardwareEncoderDetector.cs # NVENC auto-detection
-└── Ffmpeg/
-    └── ffmpeg.exe            # (not included, download separately)
-```
+### AI Kadrovi — Cloudflare Workers AI
+Generisanje slika korišćenjem opisa na srpskom ili engleskom jeziku.
 
----
+1. Unesi API ključ pri prvom pokretanju (Cloudflare Workers AI token)
+2. Upiši opise slika u polje, odvojene zarezom
+3. Pritisni **Generiši AI kadrove** ili Enter
+4. Svaka slika automatski dobija **AI audio opis** koji JAWS čita
 
-## Why This Matters
+**Primer:** `vedro nebo sa oblacima, zelena livada sa cvecima, reka u sumi`
 
-There is no professional video editing software that blind users can actually use independently. Adobe Premiere, DaVinci Resolve, Final Cut — none of them work meaningfully with screen readers.
+### Pollinations.ai — BESPLATNO, bez API ključa
+Alternativni servis za generisanje slika. Ne zahteva registraciju ni API ključ.
 
-Ultra Creative Suite exists to change that. It is the only editor where a blind person can open the application, import audio, generate a complete video with stock footage, effects, and subtitles, and render to 4K — all without sighted assistance.
+1. Upiši opis slike u isto polje za prompt
+2. Pritisni **Pollinations.ai (besplatno)** dugme
+3. Program automatski preuzima sliku i dodaje je na timeline
 
-This project is being developed as part of an [NLnet Foundation](https://nlnet.nl) grant application under the NGI0 Commons Fund.
+**Napomena:** Pollinations.ai je sporiji od Cloudflare ali potpuno besplatan.
 
----
+### Ctrl+V u polje za prompt
+Kopiraj tekst iz bilo kog izvora, pa pritisni **Ctrl+V** dok je fokus u polju za opis slike — tekst se automatski nalepi.
 
-## Contributing
+### AI Transkripcija
+Pretvara govor iz audio fajla u tekst (titlove). Koristi HuggingFace Whisper model.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Code of Conduct
-
-See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-
-## License
-
-GPL-3.0 License — see [LICENSE](LICENSE) file.
+### AI Sinhronizacija teksta
+Automatski raspoređuje stihove pesme na audio osu prema ritmici.
 
 ---
 
-*Ultra Creative Suite — Because creativity has no boundaries.*
+## Skia animacije teksta
+
+Kreira animirani video klip sa tvojim tekstom — bez eksternih alata, direktno iz editora.
+
+### Kako koristiti
+1. Klikni **Skia animacija teksta** u AI tab
+2. Upiši tekst koji hoćeš da animiraš
+3. Odaberi stil (pritisni F1 za opis svakog stila)
+4. Podesi boje i trajanje
+5. Pritisni **Kreiraj**
+
+Program renderuje animaciju frame-by-frame i dodaje je na timeline kao MP4 klip.
+
+### Dostupni stilovi
+
+| Stil | Opis |
+|---|---|
+| **FadeIn** | Tekst se postepeno pojavljuje i nestaje |
+| **SlideLeft** | Tekst ulazi s desne strane, izlazi ulevo |
+| **SlideUp** | Tekst ulazi odozdo, izlazi nagore |
+| **Bounce** | Tekst skače gore-dole sa usporavanjem |
+| **ZoomIn** | Tekst se uvećava iz centra ekrana |
+| **Stars** | Zvezde trepću u pozadini, tekst se pojavljuje |
+| **Rainbow** | Svako slovo dobija drugu boju dugine |
+
+### Saveti za dečije pesme
+- Za naslove koristi **ZoomIn** ili **FadeIn**
+- Za stihove koji idu uz muziku koristi **SlideLeft** ili **SlideUp**
+- Za završetak koristi **Stars** sa žutim tekstom na crnoj pozadini
+- Trajanje obično postavi na isto koliko traju stihovi u pesmi
+
+---
+
+## Pozicioniranje na audio osi
+
+Kada imaš audio (suprugina pesma) i hoćeš da staviš sliku na tačnu sekundu:
+
+1. Selektuj sliku na timeline-u
+2. Desni klik → **Postavi na audio osu**
+3. Upiši sekundu (npr. `30` za 0:30)
+4. Ili pritisni **Ravnomerno rasporedi** da program automatski rasporedi sve slike
+
+---
+
+## Tranzicije između klipova
+
+1. Idi na **Tranzicije** tab
+2. Selektuj efekat (pritisni F1 ili desni klik → Pročitaj opis efekta)
+3. Pritisni Enter ili Space da primeniš na selektovani klip
+4. Ili desni klik → **Primeni na sve prelaske** za ceo projekat
+
+---
+
+## Export profili
+
+Idi na **Fajl → Opcije izvoza** za odabir profila:
+
+| Profil | Namena |
+|---|---|
+| YouTube 1080p | Upload na YouTube |
+| TikTok/Reels (9:16) | Vertikalni format za mobilne |
+| Instagram (1:1) | Kvadratni format |
+| Dečiji sadržaj | Optimizovano za YouTube Kids |
+| Samo audio | Izvoz samo audio trake |
+| Kompaktni | Mali fajl za slanje |
+
+---
+
+## Rešavanje problema
+
+### JAWS ne čita klipove
+- Provjeri da je fokus na timeline listi (pritisni Ctrl+L)
+- Timeline koristi Win32 kontrolu — JAWS ga tretira kao standardnu listu fajlova
+
+### FFmpeg greška pri renderu
+- Provjeri da li `ffmpeg.exe` postoji u `Ffmpeg\` folderu
+- Provjeri da ima dovoljno slobodnog prostora na disku
+
+### AI generisanje ne radi
+- Provjeri internet konekciju
+- Cloudflare: provjeri da li je API ključ ispravan (Podešavanja → API ključevi)
+- Pollinations: ne zahteva API ključ, ali može biti sporije pri velikoj gužvi
+
+### Skia animacija traje dugo
+- Normalno — program renderuje 30 frejmova po sekundi
+- 5 sekundi animacije = 150 PNG fajlova + FFmpeg kompresija
+- Na sporijim računarima može trajati 1-2 minute
+
+---
+
+## Kontakt i podrška
+
+Projekat je razvijen sa ciljem da pomogne slepim i slabovidim osobama da samostalno kreiraju video sadržaj.
+
+---
+
+*Ultra Video Editor — Jer kreativnost ne poznaje granice.*

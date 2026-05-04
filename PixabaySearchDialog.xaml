@@ -1,0 +1,191 @@
+﻿<Window x:Class="UltraVideoEditor.PixabaySearchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:UltraVideoEditor"
+        Title="🔍 Pixabay Pretraga" Height="850" Width="950"
+        WindowStartupLocation="CenterOwner" Background="#1E1E1E"
+        AutomationProperties.Name="Pixabay pretraga slika i videa">
+
+    <Window.Resources>
+        <local:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="🔍 PIXABAY PRETRAGA" FontSize="16" FontWeight="Bold"
+                   Foreground="#00E676" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+
+        <!-- API Key -->
+        <Border Grid.Row="1" Background="#2A2A2A" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+            <StackPanel>
+                <TextBlock Text="Pixabay API ključ:" Foreground="White" Margin="0,0,0,5"/>
+                <PasswordBox x:Name="txtApiKey" Width="350" Height="30" 
+                             Background="#2D2D2D" Foreground="White"
+                             AutomationProperties.Name="Pixabay API ključ"/>
+                <TextBlock Text="Dobijte ga besplatno na pixabay.com/api/docs/" 
+                           Foreground="#888" FontSize="10" Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Pretraga i filteri -->
+        <Border Grid.Row="2" Background="#2A2A2A" CornerRadius="4" Padding="10" Margin="0,0,0,10">
+            <StackPanel>
+                <!-- Red 1: Pojam i dugme -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="🔎 Pojam:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <TextBox x:Name="txtSearch" Width="300" Height="30" 
+                             Background="#2D2D2D" Foreground="White"
+                             AutomationProperties.Name="Pojam za pretragu"
+                             KeyDown="txtSearch_KeyDown"/>
+                    <Button x:Name="btnSearch" Content="🔍 PRETRAŽI" Click="btnSearch_Click"
+                            Width="100" Height="30" Background="#FF9800" Foreground="White" Margin="10,0,0,0"/>
+                </StackPanel>
+
+                <!-- Red 2: Tip medija i orijentacija -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="🎬 Tip medija:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbMediaType" Width="120" Height="25" Background="#2D2D2D" Foreground="White" Margin="0,0,20,0"
+                              SelectionChanged="cmbMediaType_SelectionChanged">
+                        <ComboBoxItem Content="📸 Fotografije" Tag="photo" IsSelected="True"/>
+                        <ComboBoxItem Content="🎥 Video zapisi" Tag="video"/>
+                    </ComboBox>
+
+                    <TextBlock Text="🔄 Orijentacija:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbOrientation" Width="100" Height="25" Background="#2D2D2D" Foreground="White">
+                        <ComboBoxItem Content="Sve" Tag="all" IsSelected="True"/>
+                        <ComboBoxItem Content="📱 Horizontalno" Tag="horizontal"/>
+                        <ComboBoxItem Content="📱 Vertikalno" Tag="vertical"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Red 3: Kategorija i boja -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="📁 Kategorija:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbCategory" Width="130" Height="25" Background="#2D2D2D" Foreground="White" Margin="0,0,20,0">
+                        <ComboBoxItem Content="Sve" Tag="" IsSelected="True"/>
+                        <ComboBoxItem Content="🌿 Priroda" Tag="nature"/>
+                        <ComboBoxItem Content="👨‍👩‍👧‍👦 Ljudi" Tag="people"/>
+                        <ComboBoxItem Content="🐶 Životinje" Tag="animals"/>
+                        <ComboBoxItem Content="⚽ Sport" Tag="sports"/>
+                        <ComboBoxItem Content="✈️ Putovanja" Tag="travel"/>
+                        <ComboBoxItem Content="🏢 Zgrade" Tag="buildings"/>
+                        <ComboBoxItem Content="🍕 Hrana" Tag="food"/>
+                        <ComboBoxItem Content="🎵 Muzika" Tag="music"/>
+                    </ComboBox>
+
+                    <TextBlock Text="🎨 Boja (samo slike):" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbColor" Width="100" Height="25" Background="#2D2D2D" Foreground="White">
+                        <ComboBoxItem Content="Sve" Tag="" IsSelected="True"/>
+                        <ComboBoxItem Content="🔴 Crvena" Tag="red"/>
+                        <ComboBoxItem Content="🔵 Plava" Tag="blue"/>
+                        <ComboBoxItem Content="🟢 Zelena" Tag="green"/>
+                        <ComboBoxItem Content="🟡 Žuta" Tag="yellow"/>
+                        <ComboBoxItem Content="🟠 Narandžasta" Tag="orange"/>
+                        <ComboBoxItem Content="🩷 Roze" Tag="pink"/>
+                        <ComboBoxItem Content="⚫ Crna" Tag="black"/>
+                        <ComboBoxItem Content="⚪ Bijela" Tag="white"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <!-- Red 4: Min širina i Editors Choice -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="📏 Min. širina:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbMinWidth" Width="100" Height="25" Background="#2D2D2D" Foreground="White" Margin="0,0,20,0">
+                        <ComboBoxItem Content="Bilo" Tag="0" IsSelected="True"/>
+                        <ComboBoxItem Content="640px" Tag="640"/>
+                        <ComboBoxItem Content="800px" Tag="800"/>
+                        <ComboBoxItem Content="1024px" Tag="1024"/>
+                        <ComboBoxItem Content="1280px" Tag="1280"/>
+                        <ComboBoxItem Content="1920px" Tag="1920"/>
+                    </ComboBox>
+
+                    <TextBlock Text="⭐ Editors Choice:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <CheckBox x:Name="chkEditorsChoice" VerticalAlignment="Center" Foreground="White"/>
+                </StackPanel>
+
+                <!-- Red 5: Video filteri (prikazuju se samo kad je video tip) -->
+                <StackPanel x:Name="videoFilters" Orientation="Horizontal" Margin="0,10,0,0" Visibility="Collapsed">
+                    <TextBlock Text="⏱ Min. trajanje (s):" Foreground="White" Width="120" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbMinDuration" Width="80" Height="25" Background="#2D2D2D" Foreground="White" Margin="0,0,20,0">
+                        <ComboBoxItem Content="Bilo" Tag="0" IsSelected="True"/>
+                        <ComboBoxItem Content="3s" Tag="3"/>
+                        <ComboBoxItem Content="5s" Tag="5"/>
+                        <ComboBoxItem Content="10s" Tag="10"/>
+                        <ComboBoxItem Content="15s" Tag="15"/>
+                        <ComboBoxItem Content="20s" Tag="20"/>
+                    </ComboBox>
+
+                    <TextBlock Text="📹 Rezolucija videa:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="cmbVideoQuality" Width="100" Height="25" Background="#2D2D2D" Foreground="White">
+                        <ComboBoxItem Content="Sve" Tag="all" IsSelected="True"/>
+                        <ComboBoxItem Content="HD" Tag="hd"/>
+                        <ComboBoxItem Content="Full HD" Tag="fullhd"/>
+                        <ComboBoxItem Content="4K" Tag="4k"/>
+                    </ComboBox>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Rezultati -->
+        <ListBox x:Name="lstResults" Grid.Row="3" Background="#1A1A1A" Height="300"
+                 SelectionMode="Extended"
+                 SelectionChanged="lstResults_SelectionChanged"
+                 AutomationProperties.Name="Rezultati pretrage">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Border BorderBrush="#444" BorderThickness="0,0,0,1" Padding="10">
+                        <StackPanel Orientation="Horizontal">
+                            <Image Source="{Binding ThumbnailURL}" Width="120" Height="80" Stretch="Uniform"/>
+                            <StackPanel Margin="10,0,0,0">
+                                <TextBlock Text="{Binding Title}" Foreground="White" FontWeight="Bold" TextWrapping="Wrap" MaxWidth="500"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                    <TextBlock Text="👍" Foreground="#888"/>
+                                    <TextBlock Text="{Binding Likes}" Foreground="#888" Margin="3,0,10,0"/>
+                                    <TextBlock Text="👁️" Foreground="#888"/>
+                                    <TextBlock Text="{Binding Views}" Foreground="#888" Margin="3,0,10,0"/>
+                                    <TextBlock Text="📥" Foreground="#888"/>
+                                    <TextBlock Text="{Binding Downloads}" Foreground="#888" Margin="3,0,0,0"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                                    <TextBlock Text="📷" Foreground="#888" FontSize="10"/>
+                                    <TextBlock Text="{Binding Dimensions}" Foreground="#888" FontSize="10" Margin="3,0,10,0"/>
+                                    <TextBlock Text="🎬" Foreground="#888" FontSize="10" Visibility="{Binding IsVideo, Converter={StaticResource BoolToVisibility}}"/>
+                                    <TextBlock Text="{Binding Duration}" Foreground="#888" FontSize="10" Margin="3,0,0,0" Visibility="{Binding IsVideo, Converter={StaticResource BoolToVisibility}}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding User}" Foreground="#AAA" FontSize="10" Margin="0,3,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <!-- Info o odabranim stavkama -->
+        <Border Grid.Row="4" Background="#1A3A1A" CornerRadius="4" Padding="8" Margin="0,10,0,10">
+            <TextBlock x:Name="txtSelectedInfo" Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap"
+                       Text="Selektujte jednu ili više stavki (Ctrl+klik ili Shift+klik)"/>
+        </Border>
+
+        <!-- Dugmad -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+            <Button x:Name="btnDownload" Content="📥 PREUZMI SELEKTOVANO" Click="btnDownload_Click"
+                    Width="200" Height="35" Background="#2E7D32" Foreground="White"
+                    FontSize="13" FontWeight="Bold" Margin="0,0,10,0"
+                    IsEnabled="False"/>
+            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="btnCancel_Click"
+                    Width="100" Height="35" Background="#B71C1C" Foreground="White"
+                    FontSize="13" FontWeight="Bold"/>
+        </StackPanel>
+    </Grid>
+</Window>

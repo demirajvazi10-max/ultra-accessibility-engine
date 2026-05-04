@@ -1,0 +1,109 @@
+﻿<Window x:Class="UltraVideoEditor.TextOverlayDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="🎨 Profesionalni tekst na slici" Height="550" Width="450"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#1E1E1E"
+        AutomationProperties.Name="Dijalog za dodavanje teksta na sliku">
+
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="🎨 PROFESIONALNI TEKST NA SLICI" FontSize="16" FontWeight="Bold"
+                   Foreground="#00E676" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+
+        <!-- Tekst -->
+        <TextBlock Grid.Row="1" Text="Tekst:" Foreground="White" Margin="0,5,0,3"/>
+        <TextBox x:Name="txtText" Grid.Row="2" Height="60" TextWrapping="Wrap" 
+                 AcceptsReturn="True" VerticalScrollBarVisibility="Auto"
+                 Background="#2D2D2D" Foreground="White" Margin="0,0,0,10"
+                 AutomationProperties.Name="Tekst koji će se prikazati na slici"/>
+
+        <!-- Font -->
+        <TextBlock Grid.Row="3" Text="Font:" Foreground="White" Margin="0,5,0,3"/>
+        <ComboBox x:Name="cmbFont" Grid.Row="4" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10">
+            <ComboBoxItem Content="Arial" IsSelected="True"/>
+            <ComboBoxItem Content="Verdana"/>
+            <ComboBoxItem Content="Times New Roman"/>
+            <ComboBoxItem Content="Comic Sans MS"/>
+            <ComboBoxItem Content="Impact"/>
+            <ComboBoxItem Content="Segoe UI"/>
+            <ComboBoxItem Content="Georgia"/>
+            <ComboBoxItem Content="Tahoma"/>
+        </ComboBox>
+
+        <!-- Veličina fonta -->
+        <TextBlock Grid.Row="5" Text="Veličina fonta:" Foreground="White" Margin="0,5,0,3"/>
+        <ComboBox x:Name="cmbFontSize" Grid.Row="6" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10"
+                  IsEditable="True" Text="48">
+            <ComboBoxItem Content="24"/>
+            <ComboBoxItem Content="32"/>
+            <ComboBoxItem Content="48" IsSelected="True"/>
+            <ComboBoxItem Content="64"/>
+            <ComboBoxItem Content="72"/>
+            <ComboBoxItem Content="96"/>
+            <ComboBoxItem Content="128"/>
+        </ComboBox>
+
+        <!-- Boja teksta -->
+        <TextBlock Grid.Row="7" Text="Boja teksta:" Foreground="White" Margin="0,5,0,3"/>
+        <ComboBox x:Name="cmbTextColor" Grid.Row="8" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10">
+            <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF" IsSelected="True"/>
+            <ComboBoxItem Content="⚫ Crna" Tag="#000000"/>
+            <ComboBoxItem Content="🔴 Crvena" Tag="#FF0000"/>
+            <ComboBoxItem Content="🟢 Zelena" Tag="#00FF00"/>
+            <ComboBoxItem Content="🔵 Plava" Tag="#0000FF"/>
+            <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
+            <ComboBoxItem Content="🟠 Narandžasta" Tag="#FFA500"/>
+            <ComboBoxItem Content="🟣 Ljubičasta" Tag="#800080"/>
+            <ComboBoxItem Content="🩷 Roze" Tag="#FFC0CB"/>
+            <ComboBoxItem Content="🤎 Smeđa" Tag="#8B4513"/>
+            <ComboBoxItem Content="🩶 Siva" Tag="#808080"/>
+            <ComboBoxItem Content="💙 Tamnoplava" Tag="#00008B"/>
+            <ComboBoxItem Content="💚 Tamnozelena" Tag="#006400"/>
+            <ComboBoxItem Content="🧡 Narandžasta" Tag="#FF8C00"/>
+            <ComboBoxItem Content="💜 Lavanda" Tag="#E6E6FA"/>
+            <ComboBoxItem Content="💛 Zlatna" Tag="#FFD700"/>
+            <ComboBoxItem Content="🤍 Bijela (sjajna)" Tag="#F5F5F5"/>
+            <ComboBoxItem Content="🖤 Tamno siva" Tag="#333333"/>
+        </ComboBox>
+
+        <!-- Pozicija -->
+        <TextBlock Grid.Row="9" Text="Pozicija teksta:" Foreground="White" Margin="0,5,0,3"/>
+        <ComboBox x:Name="cmbPosition" Grid.Row="10" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10">
+            <ComboBoxItem Content="📐 Gore lijevo"/>
+            <ComboBoxItem Content="📐 Gore centar"/>
+            <ComboBoxItem Content="📐 Gore desno"/>
+            <ComboBoxItem Content="📐 Centar" IsSelected="True"/>
+            <ComboBoxItem Content="📐 Dolje lijevo"/>
+            <ComboBoxItem Content="📐 Dolje centar"/>
+            <ComboBoxItem Content="📐 Dolje desno"/>
+        </ComboBox>
+
+        <!-- Dugmad -->
+        <StackPanel Grid.Row="11" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+            <Button x:Name="btnApply" Content="✅ DODAJ TEKST" Click="Apply_Click"
+                    Width="120" Height="35" Background="#2E7D32" Foreground="White"
+                    FontSize="13" FontWeight="Bold" Margin="0,0,10,0"
+                    AutomationProperties.Name="Dodaj tekst na sliku"/>
+            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click"
+                    Width="100" Height="35" Background="#B71C1C" Foreground="White"
+                    FontSize="13" FontWeight="Bold"
+                    AutomationProperties.Name="Otkaži"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,45 @@
+﻿			<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net8.0-windows</TargetFramework>
+		<Nullable>disable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<UseWPF>true</UseWPF>
+		<UseWindowsForms>true</UseWindowsForms>
+		<AssemblyName>UltraVideoEditor</AssemblyName>
+		<RootNamespace>UltraVideoEditor</RootNamespace>	
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="LibVLCSharp" Version="3.9.6" />
+		<PackageReference Include="LibVLCSharp.WPF" Version="3.9.6" />
+		<PackageReference Include="Magick.NET-Q16-AnyCPU" Version="14.12.0" />
+		<PackageReference Include="Microsoft.Windows.Compatibility" Version="10.0.6" />
+		<PackageReference Include="NAudio" Version="2.3.0" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+		<PackageReference Include="PixabaySharp" Version="1.1.0" />
+		<PackageReference Include="SkiaSharp" Version="2.88.6" />
+		<PackageReference Include="SkiaSharp.Views.WPF" Version="2.88.6" />
+		<PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />
+		</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Update="Properties\Resources.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Resources.resx</DependentUpon>
+	  </Compile>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Update="Properties\Resources.resx">
+	    <Generator>ResXFileCodeGenerator</Generator>
+	    <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+	  </EmbeddedResource>
+		<Content Include="Assets\Sounds\**\*.*">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+</Project>

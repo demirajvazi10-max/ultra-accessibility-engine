@@ -1,0 +1,44 @@
+﻿<Window x:Class="UltraVideoEditor.VolumeControl"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Podešavanje jačine zvuka" Height="180" Width="400"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#2D2D2D"
+        AutomationProperties.Name="Dijalog za podešavanje jačine zvuka klipa">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Jačina zvuka" Foreground="White" FontSize="14" 
+                   HorizontalAlignment="Center" Margin="0,0,0,15"
+                   AutomationProperties.Name="Naslov za podešavanje jačine"/>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+            <TextBlock Text="0%" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"/>
+            <Slider x:Name="sldVolume" Minimum="0" Maximum="200" Width="250" 
+                    ValueChanged="VolumeSlider_ValueChanged"
+                    AutomationProperties.Name="Klizač za jačinu zvuka"
+                    AutomationProperties.HelpText="Levo za tiše, desno za glasnije, strelice levo desno za fino podešavanje"/>
+            <TextBlock Text="200%" Foreground="White" VerticalAlignment="Center" Margin="10,0,0,0"/>
+        </StackPanel>
+
+        <TextBlock x:Name="txtVolumeValue" Grid.Row="2" Text="100%" 
+                   Foreground="#00E676" FontSize="16" FontWeight="Bold"
+                   HorizontalAlignment="Center" Margin="0,0,0,15"
+                   AutomationProperties.Name="Trenutna vrednost jačine zvuka"
+                   AutomationProperties.LiveSetting="Polite"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,40,0,0">
+            <Button x:Name="btnOk" Content="✅ POTVRDI" Click="Ok_Click" Width="100" Height="35" 
+                    Background="#2E7D32" Foreground="White" Margin="0,0,10,0"
+                    AutomationProperties.Name="Potvrdi jačinu zvuka"/>
+            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+                    Background="#B71C1C" Foreground="White"
+                    AutomationProperties.Name="Otkaži"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,24 @@
+﻿<Window x:Class="UltraVideoEditor.NumericDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Unesi poziciju" Height="150" Width="300"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#1E1E1E">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="lblInstruction" Text="Pozicija:" Foreground="White" Margin="0,0,0,10"/>
+        <TextBox x:Name="txtNumber" Grid.Row="1" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10"
+                 AutomationProperties.Name="Unesite broj klipa"
+                 AutomationProperties.HelpText="Unesite redni broj klipa koji želite da selektujete"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Content="OK" Width="80" Margin="0,0,10,0" Click="Ok_Click" Background="#2E7D32" Foreground="White"/>
+            <Button Content="Otkaži" Width="80" Click="Cancel_Click" Background="#B71C1C" Foreground="White"/>
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,31 @@
+﻿<Window x:Class="UltraVideoEditor.ResolutionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Odabir rezolucije" Height="200" Width="350"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        Background="#1E1E1E">
+    <Grid Margin="15">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="📹 Odaberite rezoluciju videa" FontSize="14" FontWeight="Bold"
+                   Foreground="#00E676" HorizontalAlignment="Center" Margin="0,0,0,15"/>
+
+        <ComboBox x:Name="cmbResolution" Grid.Row="1" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,20">
+            <ComboBoxItem Content="📱 1280×720 (HD)" Tag="1280x720" IsSelected="True"/>
+            <ComboBoxItem Content="📺 1920×1080 (Full HD)" Tag="1920x1080"/>
+            <ComboBoxItem Content="🎬 2560×1440 (2K)" Tag="2560x1440"/>
+            <ComboBoxItem Content="🚀 3840×2160 (4K)" Tag="3840x2160"/>
+        </ComboBox>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Content="✅ POTVRDI" Click="Ok_Click" Width="100" Height="35" 
+                    Background="#2E7D32" Foreground="White" Margin="0,0,10,0"/>
+            <Button Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+                    Background="#B71C1C" Foreground="White"/>
+        </StackPanel>
+    </Grid>
+</Window>
