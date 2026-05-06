@@ -1,0 +1,71 @@
+{
+  "version": "v1.0.0",
+  "entity": {
+    "type": "individual",
+    "role": "maintainer",
+    "name": "Demir Ajvazi",
+    "email": "demir.ajvazi10@gmail.com",
+    "description": "Blind software developer from Serbia. I use JAWS screen reader as my primary interface with a computer. I built Ultra Creative Suite because no professional video editor in the world works properly with a screen reader.",
+    "webpageUrl": {
+      "url": "https://github.com/demirajvazi10-max/Ultra-Creative-suite"
+    }
+  },
+  "projects": [
+    {
+      "guid": "ultra-creative-suite",
+      "name": "Ultra Creative Suite",
+      "description": "The world's first professional video editor built from the ground up for blind, low-vision, and sighted users. Every feature — timeline editing, AI video creation, 4K GPU rendering — is fully accessible via JAWS and NVDA screen readers. The AI Video Creator transcribes song lyrics using Whisper AI, automatically downloads matching stock footage, and renders a complete music video in 4K, entirely controllable through a screen reader. Built in C# / WPF / .NET 8. Over 300 million people are blind or severely visually impaired worldwide. Before this project, none of them had a professional creative tool built for them.",
+      "webpageUrl": {
+        "url": "https://github.com/demirajvazi10-max/Ultra-Creative-suite"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/demirajvazi10-max/Ultra-Creative-suite"
+      },
+      "licenses": ["spdx:GPL-3.0"],
+      "tags": [
+        "accessibility",
+        "blind",
+        "screen-reader",
+        "jaws",
+        "nvda",
+        "video-editor",
+        "ai",
+        "whisper",
+        "ffmpeg",
+        "dotnet",
+        "csharp",
+        "wpf",
+        "open-source"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "github-sponsors",
+        "type": "github",
+        "address": "demirajvazi10-max",
+        "description": "GitHub Sponsors — support directly on GitHub"
+      },
+      {
+        "guid": "ko-fi",
+        "type": "other",
+        "address": "https://ko-fi.com/ultracreativesuite",
+        "description": "Ko-fi — one-time or monthly support"
+      }
+    ],
+    "plans": [
+      {
+        "guid": "general-support",
+        "status": "active",
+        "name": "General Development Support",
+        "description": "Covers API credits for Pixabay and Freesound stock media used by the AI Video Creator, storage and testing infrastructure for 4K rendering and local AI model processing, and a professional JAWS accessibility audit before public release.",
+        "amount": 10000,
+        "currency": "USD",
+        "frequency": "yearly",
+        "channels": ["github-sponsors", "ko-fi"]
+      }
+    ],
+    "history": []
+  }
+}
