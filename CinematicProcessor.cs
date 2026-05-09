@@ -161,6 +161,8 @@ namespace UltraVideoEditor
     {
         public class CropRegion
         {
+        // Language helper
+
             public int X         { get; set; }
             public int Y         { get; set; }
             public int Width     { get; set; }
@@ -548,6 +550,11 @@ namespace UltraVideoEditor
 
     public static class VisionAI
     {
+        // Language helper
+        private static string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         private static readonly HttpClient _http = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(120)
@@ -644,7 +651,7 @@ namespace UltraVideoEditor
                 await Task.Delay(200, ct);
             }
 
-            onProgress(-2, $"Opisivanje završeno: {count} klipova opisano.");
+            onProgress(-2, LF("cp_describe_done", count));
         }
 
         /// <summary>

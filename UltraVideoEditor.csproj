@@ -19,6 +19,9 @@
 		<PackageReference Include="NAudio" Version="2.3.0" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
 		<PackageReference Include="PixabaySharp" Version="1.1.0" />
+		<!-- ONNX Runtime — AI computer vision za analizu klipova -->
+		<!-- Ako nije instalirano, VisionAnalyzer automatski koristi FFmpeg fallback -->
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.0" />
 		<PackageReference Include="SkiaSharp" Version="2.88.6" />
 		<PackageReference Include="SkiaSharp.Views.WPF" Version="2.88.6" />
 		<PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23" />

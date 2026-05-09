@@ -41,7 +41,7 @@
         <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20">
             <Button x:Name="btnExport" Content="✅ IZVEZI" Click="Export_Click" Width="100" Height="35" 
                     Background="#2E7D32" Foreground="White" Margin="0,0,10,0"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="Cancel_Click" Width="100" Height="35" 
                     Background="#B71C1C" Foreground="White"/>
         </StackPanel>
     </Grid>

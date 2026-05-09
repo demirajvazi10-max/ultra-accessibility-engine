@@ -1,10 +1,10 @@
 ﻿<Window x:Class="UltraVideoEditor.DurationDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Podešavanje trajanja" Height="200" Width="400"
+        Title="Duration settings" Height="200" Width="400"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="#2D2D2D"
-        AutomationProperties.Name="Dijalog za podešavanje trajanja klipa">
+        AutomationProperties.Name="Dialog for setting clip duration">
 
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -20,7 +20,7 @@
             <TextBox x:Name="txtDuration" Width="100" Height="35" Text="5" 
                      TextAlignment="Center" FontSize="16" Margin="0,0,10,0"
                      AutomationProperties.Name="Polje za unos trajanja u sekundama"
-                     AutomationProperties.HelpText="Unesite broj sekundi, možete koristiti i decimalni zarez"/>
+                     AutomationProperties.HelpText="Enter seconds, decimal comma also accepted"/>
             <TextBlock Text="sekundi" Foreground="White" FontSize="14" VerticalAlignment="Center"/>
         </StackPanel>
 
@@ -29,9 +29,9 @@
                     Background="#2E7D32" Foreground="White" Margin="0,0,10,0"
                     AutomationProperties.Name="Potvrdi trajanje"
                     AutomationProperties.HelpText="Primenjuje uneto trajanje na klip"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="Cancel_Click" Width="100" Height="35" 
                     Background="#B71C1C" Foreground="White"
-                    AutomationProperties.Name="Otkaži"
+                    AutomationProperties.Name="Cancel"
                     AutomationProperties.HelpText="Odustaje od promene trajanja"/>
         </StackPanel>
     </Grid>

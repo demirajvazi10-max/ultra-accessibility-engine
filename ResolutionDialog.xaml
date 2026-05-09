@@ -24,7 +24,7 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center">
             <Button Content="✅ POTVRDI" Click="Ok_Click" Width="100" Height="35" 
                     Background="#2E7D32" Foreground="White" Margin="0,0,10,0"/>
-            <Button Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+            <Button Content="❌ CANCEL" Click="Cancel_Click" Width="100" Height="35" 
                     Background="#B71C1C" Foreground="White"/>
         </StackPanel>
     </Grid>

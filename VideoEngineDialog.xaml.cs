@@ -14,6 +14,11 @@ namespace UltraVideoEditor
 {
     public partial class VideoEngineDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         // ── Stanje ──────────────────────────────────────────────────
         private List<LyricShot>          _shots;
         private OllamaClient             _ollama;
@@ -376,7 +381,7 @@ namespace UltraVideoEditor
 
             var dlg = new Microsoft.Win32.SaveFileDialog
             {
-                Title      = "Sačuvaj shot listu",
+                Title      = L("ved_save_shotlist"),
                 Filter     = "JSON fajl|*.json",
                 FileName   = "shot_lista.json"
             };

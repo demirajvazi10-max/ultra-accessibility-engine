@@ -29,10 +29,10 @@
         <!-- API Key -->
         <Border Grid.Row="1" Background="#2A2A2A" CornerRadius="4" Padding="10" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="Pixabay API ključ:" Foreground="White" Margin="0,0,0,5"/>
+                <TextBlock Text="Pixabay API key:" Foreground="White" Margin="0,0,0,5"/>
                 <PasswordBox x:Name="txtApiKey" Width="350" Height="30" 
                              Background="#2D2D2D" Foreground="White"
-                             AutomationProperties.Name="Pixabay API ključ"/>
+                             AutomationProperties.Name="Pixabay API key"/>
                 <TextBlock Text="Dobijte ga besplatno na pixabay.com/api/docs/" 
                            Foreground="#888" FontSize="10" Margin="0,5,0,0"/>
             </StackPanel>
@@ -48,7 +48,7 @@
                              Background="#2D2D2D" Foreground="White"
                              AutomationProperties.Name="Pojam za pretragu"
                              KeyDown="txtSearch_KeyDown"/>
-                    <Button x:Name="btnSearch" Content="🔍 PRETRAŽI" Click="btnSearch_Click"
+                    <Button x:Name="btnSearch" Content="🔍 SEARCH" Click="btnSearch_Click"
                             Width="100" Height="30" Background="#FF9800" Foreground="White" Margin="10,0,0,0"/>
                 </StackPanel>
 
@@ -76,7 +76,7 @@
                         <ComboBoxItem Content="Sve" Tag="" IsSelected="True"/>
                         <ComboBoxItem Content="🌿 Priroda" Tag="nature"/>
                         <ComboBoxItem Content="👨‍👩‍👧‍👦 Ljudi" Tag="people"/>
-                        <ComboBoxItem Content="🐶 Životinje" Tag="animals"/>
+                        <ComboBoxItem Content="🐶 Animals" Tag="animals"/>
                         <ComboBoxItem Content="⚽ Sport" Tag="sports"/>
                         <ComboBoxItem Content="✈️ Putovanja" Tag="travel"/>
                         <ComboBoxItem Content="🏢 Zgrade" Tag="buildings"/>
@@ -90,8 +90,8 @@
                         <ComboBoxItem Content="🔴 Crvena" Tag="red"/>
                         <ComboBoxItem Content="🔵 Plava" Tag="blue"/>
                         <ComboBoxItem Content="🟢 Zelena" Tag="green"/>
-                        <ComboBoxItem Content="🟡 Žuta" Tag="yellow"/>
-                        <ComboBoxItem Content="🟠 Narandžasta" Tag="orange"/>
+                        <ComboBoxItem Content="🟡 Yellow" Tag="yellow"/>
+                        <ComboBoxItem Content="🟠 Orange" Tag="orange"/>
                         <ComboBoxItem Content="🩷 Roze" Tag="pink"/>
                         <ComboBoxItem Content="⚫ Crna" Tag="black"/>
                         <ComboBoxItem Content="⚪ Bijela" Tag="white"/>
@@ -100,7 +100,7 @@
 
                 <!-- Red 4: Min širina i Editors Choice -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                    <TextBlock Text="📏 Min. širina:" Foreground="White" Width="100" VerticalAlignment="Center"/>
+                    <TextBlock Text="📏 Min. width:" Foreground="White" Width="100" VerticalAlignment="Center"/>
                     <ComboBox x:Name="cmbMinWidth" Width="100" Height="25" Background="#2D2D2D" Foreground="White" Margin="0,0,20,0">
                         <ComboBoxItem Content="Bilo" Tag="0" IsSelected="True"/>
                         <ComboBoxItem Content="640px" Tag="640"/>
@@ -174,7 +174,7 @@
         <!-- Info o odabranim stavkama -->
         <Border Grid.Row="4" Background="#1A3A1A" CornerRadius="4" Padding="8" Margin="0,10,0,10">
             <TextBlock x:Name="txtSelectedInfo" Foreground="#AAAAAA" FontSize="11" TextWrapping="Wrap"
-                       Text="Selektujte jednu ili više stavki (Ctrl+klik ili Shift+klik)"/>
+                       Text="Select one or more items (Ctrl+click or Shift+click)"/>
         </Border>
 
         <!-- Dugmad -->
@@ -183,7 +183,7 @@
                     Width="200" Height="35" Background="#2E7D32" Foreground="White"
                     FontSize="13" FontWeight="Bold" Margin="0,0,10,0"
                     IsEnabled="False"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="btnCancel_Click"
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="btnCancel_Click"
                     Width="100" Height="35" Background="#B71C1C" Foreground="White"
                     FontSize="13" FontWeight="Bold"/>
         </StackPanel>

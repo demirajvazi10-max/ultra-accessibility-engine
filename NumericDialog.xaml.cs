@@ -6,6 +6,11 @@ namespace UltraVideoEditor
 {
     public partial class NumericDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public int SelectedNumber { get; private set; }
         private readonly int _maxValue;
 
@@ -27,7 +32,7 @@ namespace UltraVideoEditor
             }
             else
             {
-                WpfMessageBox.Show($"Unesite broj između 1 i {_maxValue}", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(LF("nd_enter_number", _maxValue), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 txtNumber.Focus();
             }
         }

@@ -18,6 +18,11 @@ namespace UltraVideoEditor
 {
     public partial class PixabaySearchDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         private string _apiKey;
         private List<PixabayMediaItem> _currentResults;
         private bool _isVideoMode = false;
@@ -98,8 +103,8 @@ namespace UltraVideoEditor
 
             if (string.IsNullOrEmpty(_apiKey))
             {
-                WpfMessageBox.Show("Unesite Pixabay API ključ. Dobijte ga besplatno na pixabay.com/api/docs/",
-                    "API ključ", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(L("psd_enter_key"),
+                    L("psd_key_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -117,7 +122,7 @@ namespace UltraVideoEditor
             try
             {
                 lstResults.Items.Clear();
-                lstResults.Items.Add("🔍 Pretražujem...");
+                lstResults.Items.Add(L("psd_searching_msg"));
 
                 string orientation = GetSelectedTag(cmbOrientation, "all");
                 string category = GetSelectedTag(cmbCategory, "");
@@ -211,11 +216,11 @@ namespace UltraVideoEditor
                             lstResults.Items.Add(item);
                         }
 
-                        txtSelectedInfo.Text = $"Pronađeno {hits.Count} rezultata. Selektujte jedan ili više (Ctrl+klik).";
+                        txtSelectedInfo.Text = LF("psd_found_results", hits.Count);
                     }
                     else
                     {
-                        lstResults.Items.Add("📭 Nema rezultata. Pokušajte drugi pojam.");
+                        lstResults.Items.Add(L("psd_no_results_msg"));
                         txtSelectedInfo.Text = "Nema rezultata za ovu pretragu.";
                     }
                 }
@@ -223,8 +228,8 @@ namespace UltraVideoEditor
             catch (Exception ex)
             {
                 lstResults.Items.Clear();
-                lstResults.Items.Add($"❌ Greška: {ex.Message}");
-                txtSelectedInfo.Text = $"Greška: {ex.Message}";
+                lstResults.Items.Add(LF("psd_error_item", ex.Message));
+                txtSelectedInfo.Text = LF("generic_error", ex.Message);
             }
         }
 
@@ -259,7 +264,7 @@ namespace UltraVideoEditor
             {
                 btnDownload.IsEnabled = false;
                 btnDownload.Content = _isVideoMode ? "📥 PREUZMI VIDEO" : "📥 PREUZMI SLIKE";
-                txtSelectedInfo.Text = "Selektujte jednu ili više stavki (Ctrl+klik ili Shift+klik).";
+                txtSelectedInfo.Text = L("psd_select_hint");
             }
         }
 
@@ -268,7 +273,7 @@ namespace UltraVideoEditor
             var selectedItems = lstResults.SelectedItems.Cast<PixabayMediaItem>().ToList();
             if (selectedItems.Count == 0)
             {
-                WpfMessageBox.Show("Selektujte jednu ili više stavki za preuzimanje.", "Upozorenje",
+                WpfMessageBox.Show(L("psd_select_for_download"), L("warning"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -304,7 +309,7 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show($"Greška pri preuzimanju: {ex.Message}", "Greška",
+                WpfMessageBox.Show(LF("psd_download_error2", ex.Message), L("error_title"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 btnDownload.IsEnabled = true;
                 btnDownload.Content = _isVideoMode ? "📥 PREUZMI VIDEO" : "📥 PREUZMI SLIKE";

@@ -44,7 +44,7 @@
                     FontSize="11" Cursor="Hand"
                     Click="btnAutoTranscribe_Click"
                     AutomationProperties.Name="Automatski transkribuj tekst iz audio fajla pomocu Whisper AI"
-                    ToolTip="Whisper AI automatski prepoznaje tekst pesme iz učitanog audio fajla"/>
+                    ToolTip="Whisper AI automatically recognizes song lyrics from the loaded audio file"/>
             <TextBlock x:Name="txtTranscribeStatus" Foreground="#FF9800" FontSize="10"
                        VerticalAlignment="Center" Margin="8,0,0,0" Text=""/>
         </StackPanel>
@@ -82,9 +82,9 @@
         <!-- Tabela za pregled ključnih riječi -->
         <Border Grid.Row="5" Background="#2A2A2A" CornerRadius="4" Padding="8" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="🔑 AI prijedlozi ključnih riječi (automatski)" Foreground="#00E676" FontWeight="Bold" Margin="0,0,0,8"/>
+                <TextBlock Text="🔑 AI keyword suggestions (automatic)" Foreground="#00E676" FontWeight="Bold" Margin="0,0,0,8"/>
                 <ListBox x:Name="lstKeywords" Height="120" Background="#1A1A1A" Foreground="White"
-                         AutomationProperties.Name="Lista ključnih riječi po stihovima"/>
+                         AutomationProperties.Name="Keyword list by lyric lines"/>
             </StackPanel>
         </Border>
 
@@ -100,7 +100,7 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">
-                    <CheckBox x:Name="chkShowLogo" Content="Prikaži logo na početku" Foreground="White" IsChecked="False" Margin="0,0,20,0"/>
+                    <CheckBox x:Name="chkShowLogo" Content="Show logo at start" Foreground="White" IsChecked="False" Margin="0,0,20,0"/>
                     <TextBlock Text="Trajanje loga (s):" Foreground="White" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtLogoDuration" Width="50" Height="25" Text="5" Background="#2D2D2D" Foreground="White" Margin="5,0,0,0"/>
                 </StackPanel>
@@ -115,13 +115,13 @@
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                     <TextBlock Text="Najavni tekst (naslov pjesme):" Foreground="White" Width="140" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtIntroText" Width="260" Height="25" Background="#2D2D2D" Foreground="White" Padding="3"
-                             Text="🎵 Nova pjesmica"/>
+                             Text=""/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                     <TextBlock Text="Odjavni tekst:" Foreground="White" Width="140" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtOutroText" Width="260" Height="25" Background="#2D2D2D" Foreground="White" Padding="3"
-                             Text="Autor: Iskra Ajvazi. Muzika i tekst: Iskra Ajvazi. Za još predivnih pesmica, zapratite naš YouTube kanal: @Rastimo uz Iskru"/>
+                             Text=""/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">
@@ -135,28 +135,28 @@
         <!-- Opcije -->
         <Border Grid.Row="8" Background="#2A2A2A" CornerRadius="4" Padding="8" Margin="0,0,0,10">
             <StackPanel>
-                <CheckBox x:Name="chkShowLyrics" Content="🎤 Prikaži stihove na ekranu (kao titlove)" 
+                <CheckBox x:Name="chkShowLyrics" Content="🎤 Show lyrics on screen (as subtitles)" 
                           Foreground="White" IsChecked="False" Margin="0,0,0,8"
-                          AutomationProperties.Name="Prikaži stihove na ekranu tokom videa"/>
+                          AutomationProperties.Name="Show lyrics on screen during video"/>
 
                 <CheckBox x:Name="chkTransitionSounds" Content="🔊 Zvukovi pri promjeni scena (pop/whoosh efekti)" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,8"
-                          AutomationProperties.Name="Dodaj zvukove pri prelazu između scena"/>
+                          AutomationProperties.Name="Add sounds during scene transitions"/>
 
                 <CheckBox x:Name="chkAmbientSounds" Content="🌳 Ambijentalni zvukovi (ptice, more, vjetar...)" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,8"
                           AutomationProperties.Name="Dodaj ambijentalne zvukove prema scenama"/>
 
-                <CheckBox x:Name="chkVoiceNarration" Content="🗣️ Govorna najava scena (priča šta se dešava)" 
+                <CheckBox x:Name="chkVoiceNarration" Content="🗣️ Voice scene narration (describes what is happening)" 
                           Foreground="White" IsChecked="False" Margin="0,0,0,5"
                           AutomationProperties.Name="Govorna najava za slijepe korisnike"/>
 
-                <TextBlock Text="ℹ️ Preporučeno za audio opis i bolje razumijevanje" 
+                <TextBlock Text="ℹ️ Recommended for audio description and better comprehension" 
                            Foreground="#888888" FontSize="10" Margin="25,0,0,0"/>
 
                 <CheckBox x:Name="chkFastRender" Content="⚡ Brzi render — bez Ken Burns efekta (za testiranje)" 
                           Foreground="#FFD700" IsChecked="True" Margin="0,10,0,0"
-                          AutomationProperties.Name="Brzi render bez Ken Burns zoom efekta, preporučeno za testiranje"/>
+                          AutomationProperties.Name="Fast render without Ken Burns zoom effect, recommended for testing"/>
             </StackPanel>
         </Border>
 
@@ -168,10 +168,10 @@
                     <ComboBox x:Name="cmbVideoTheme" Width="220" Height="25" Background="#2D2D2D" Foreground="White">
                         <ComboBoxItem Content="🎉 Zabava (brze scene, visoka energija)" Tag="fun" IsSelected="True"/>
                         <ComboBoxItem Content="😴 Uspavljivanje (spori tempo, mirno)" Tag="calm"/>
-                        <ComboBoxItem Content="📚 Edukacija (ponavljanje, poučno)" Tag="educational"/>
+                        <ComboBoxItem Content="📚 Education (repetition, instructive)" Tag="educational"/>
                         <ComboBoxItem Content="🏃 Akcija (vrlo brzo, uzbudljivo)" Tag="action"/>
                     </ComboBox>
-                    <TextBlock Text="ℹ️ Utječe na tempo i stil videa" Foreground="#888888" FontSize="10" Margin="10,5,0,0"/>
+                    <TextBlock Text="ℹ️ Affects the tempo and style of the video" Foreground="#888888" FontSize="10" Margin="10,5,0,0"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -191,7 +191,7 @@
                     Width="150" Height="40" Background="#2E7D32" Foreground="White"
                     FontSize="13" FontWeight="Bold" Margin="0,0,10,0"
                     IsEnabled="False"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="btnCancel_Click"
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="btnCancel_Click"
                     Width="100" Height="40" Background="#B71C1C" Foreground="White"
                     FontSize="13" FontWeight="Bold"/>
         </StackPanel>

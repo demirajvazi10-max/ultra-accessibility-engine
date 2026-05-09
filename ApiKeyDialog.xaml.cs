@@ -9,12 +9,17 @@ namespace UltraVideoEditor
 {
     public partial class ApiKeyDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public string ApiKey => txtApiKey.Text.Trim();
 
         public ApiKeyDialog(string service, string message)
         {
             InitializeComponent();
-            Title = $"🔑 Unos {service} API ključa";
+            Title = LF("akd_service_title", service);
 
             txtApiKey.ToolTip = message;
         }
@@ -23,7 +28,7 @@ namespace UltraVideoEditor
         {
             if (string.IsNullOrWhiteSpace(txtApiKey.Text))
             {
-                WpfMessageBox.Show("Molimo unesite važeći API ključ.", "Upozorenje",
+                WpfMessageBox.Show(L("akd_enter_valid_key"), L("warning"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
@@ -50,7 +55,7 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show($"Ne mogu otvoriti link: {ex.Message}", "Greška",
+                WpfMessageBox.Show(LF("akd_link_error", ex.Message), L("error_title"),
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }

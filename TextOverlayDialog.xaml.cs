@@ -7,6 +7,11 @@ namespace UltraVideoEditor
 {
     public partial class TextOverlayDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public string Text => txtText.Text;
         public string Font => (cmbFont.SelectedItem as System.Windows.Controls.ComboBoxItem)?.Content.ToString() ?? "Arial";
         public int SelectedFontSize => int.TryParse(cmbFontSize.Text, out int size) ? size : 48;
@@ -32,7 +37,7 @@ namespace UltraVideoEditor
         {
             if (string.IsNullOrWhiteSpace(txtText.Text))
             {
-                WpfMessageBox.Show("Unesite tekst", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(L("textoverlay_enter_text"), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
             DialogResult = true;

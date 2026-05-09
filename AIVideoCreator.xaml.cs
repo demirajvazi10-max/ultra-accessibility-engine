@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -31,13 +31,13 @@ namespace UltraVideoEditor
         private OllamaClient _ollama;
         private bool _ollamaRunning = false;
         private List<string> _lyricLines;
-        // Timestamp-ovi iz Whisper transkripcije: indeks stiha → sekunde od pocetka
         private Dictionary<int, double> _lyricTimestamps = new Dictionary<int, double>();
         private List<TimelineSegment> _segments;
         private string _pixabayApiKey;
         private bool _showLyrics = false;
 
-        // Javno polje — MainWindow čita ovo pri render pozivu
+        private double _timelineCursorOffset = 0;
+
         public static bool FastRenderMode = true;
         private bool _enableTransitionSounds = true;
         private bool _enableAmbientSounds = true;
@@ -45,22 +45,28 @@ namespace UltraVideoEditor
         private string _selectedTheme = "fun";
         private string _tempVideoFolder;
         private string _ambientAudioPath;
+        private string _audioPath;
+        private double _totalDuration;
+        private BeatInfo _beatInfo;
+        private MotionResult _lastClipMotion;
+        private double _lastDownloadedVisionScore = 6.0;
+        private bool _lastDownloadedIsStatic = false;
         private string _detectedMood = "neutral";
         private string _detectedContext = "";
-        private FreesoundClient _freesound;
-        private string _freesoundKey;
 
-        // Keš za tranzicione zvukove - preuzimamo jednom, kopiramo za svaku scenu
+        private string _lang => (WpfApp.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _lang);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _lang), args);
+
         private readonly Dictionary<string, string> _transitionSoundCache = new Dictionary<string, string>();
 
         private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        private static readonly HttpClient _dlHttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
         private CancellationTokenSource _cts;
         private bool _isRunning = false;
         private readonly SemaphoreSlim _apiRateLimiter = new SemaphoreSlim(1, 1);
 
-        // Keš već preuzetih URL-ova — sprečava ponavljanje istog videa/slike
         private readonly HashSet<string> _usedMediaUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        // Brojač koliko puta je korišćen svaki query — za rotaciju rezultata
         private readonly Dictionary<string, int> _queryUseCount = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         private List<string> _universalKeywords = new List<string>
@@ -85,7 +91,28 @@ namespace UltraVideoEditor
             ["school"] = new List<string> { "children learning classroom bright", "kids school backpack happy", "children reading books learning" },
             ["animal"] = new List<string> { "cute animals children playing warm", "child playing with dog happy", "kids petting animals farm" },
             ["christmas"] = new List<string> { "christmas tree lights cozy warm", "children christmas gifts excited", "winter holiday family warm lights" },
-            ["fun"] = new List<string> { "children playing in park soft light warm colors", "kids running and laughing happy atmosphere", "children on swings warm colors" }
+            ["music"] = new List<string> {
+                "children singing together joyful music",
+                "child playing piano keys happy",
+                "kids dancing music colorful fun",
+                "children with instruments school music class",
+                "child headphones listening music happy bedroom"
+            },
+            ["fun"] = new List<string> { "children playing in park soft light warm colors", "kids running and laughing happy atmosphere", "children on swings warm colors" },
+            ["outdoor"] = new List<string> {
+                "children running park playground sunny",
+                "kids playing park green grass happy",
+                "child walking park family sunny day",
+                "children playground swings slide happy",
+                "kids outdoor park nature sunny playing"
+            },
+            ["health"] = new List<string> {
+                "children running active outdoor park",
+                "kids healthy active outdoor sunny",
+                "child jumping playing park happy healthy",
+                "children outdoor exercise active fun",
+                "kids sports active outdoor healthy sunny"
+            }
         };
 
         public AIVideoCreator()
@@ -98,7 +125,7 @@ namespace UltraVideoEditor
         private async void AIVideoCreator_Loaded(object sender, RoutedEventArgs e)
         {
             AutomationProperties.SetName(this, "AI Video Creator dijalog");
-            txtOllamaStatus.Text = "🔍 Provjeravam Ollama...";
+            txtOllamaStatus.Text = L("ol_checking");
             txtOllamaStatus.Foreground = System.Windows.Media.Brushes.Orange;
 
             _ollama = new OllamaClient();
@@ -106,13 +133,13 @@ namespace UltraVideoEditor
 
             if (_ollamaRunning)
             {
-                txtOllamaStatus.Text = "✅ Ollama je pokrenuta! AI će automatski generisati priču i ključne riječi.";
+                txtOllamaStatus.Text = L("ollama_running");
                 txtOllamaStatus.Foreground = System.Windows.Media.Brushes.LightGreen;
                 btnGenerate.IsEnabled = true;
             }
             else
             {
-                txtOllamaStatus.Text = "❌ Ollama NIJE pokrenuta! AI neće raditi. Molimo pokrenite Ollama.";
+                txtOllamaStatus.Text = L("ollama_not_running");
                 txtOllamaStatus.Foreground = System.Windows.Media.Brushes.Red;
                 btnGenerate.IsEnabled = false;
             }
@@ -124,31 +151,28 @@ namespace UltraVideoEditor
 
         private void AutoPopulateSongInfo()
         {
-            // Auto-popunjava naslov i odjavni tekst iz naziva audio fajla na timeline-u
             var mainWindow = System.Windows.Application.Current.MainWindow as MainWindow;
             if (mainWindow == null) return;
 
             var audioItem = mainWindow.timelineItems.FirstOrDefault(i => i.Type == "Audio");
             if (audioItem == null || string.IsNullOrEmpty(audioItem.Path)) return;
 
-            // Uzimamo naziv fajla bez ekstenzije
-            // Npr. "Iskra - Pesma o muzici.mp3" → "Iskra - Pesma o muzici"
             string fileName = Path.GetFileNameWithoutExtension(audioItem.Path);
+            if (string.IsNullOrWhiteSpace(fileName)) return;
 
-            // Popunjavamo naslov (txtIntroText) samo ako je prazno
-            if (txtIntroText != null && string.IsNullOrWhiteSpace(txtIntroText.Text))
+            if (txtIntroText != null)
                 txtIntroText.Text = fileName;
 
-            // Popunjavamo odjavni tekst (txtOutroText) samo ako je prazno
-            // Format: "naziv pesme" ili ako ima " - " onda "Izvođač - Naziv"
-            if (txtOutroText != null && string.IsNullOrWhiteSpace(txtOutroText.Text))
+            if (txtOutroText != null)
             {
-                // Pokušavamo da izvučemo izvođača i naziv ako postoji " - " separator
                 if (fileName.Contains(" - "))
                 {
                     var parts = fileName.Split(new[] { " - " }, 2, StringSplitOptions.None);
-                    // Odjavni tekst: "Naziv - Izvođač" ili samo naziv
-                    txtOutroText.Text = fileName;
+                    string izvodjac = parts[0].Trim();
+                    string naziv = parts[1].Trim();
+                    txtOutroText.Text =
+                        naziv + " | Autor: " + izvodjac +
+                        L("outro_subscribe");
                 }
                 else
                 {
@@ -161,45 +185,23 @@ namespace UltraVideoEditor
 
         private void InitFreesound()
         {
-            _freesoundKey = FreesoundClient.ReadKey();
-            if (!string.IsNullOrEmpty(_freesoundKey))
+            string soundsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Sounds");
+            if (Directory.Exists(soundsDir) && Directory.GetFiles(soundsDir, "*.*", SearchOption.AllDirectories).Length > 0)
             {
-                _freesound = new FreesoundClient(_freesoundKey);
-                LogToMainWindow("🔊 Freesound inicijalizovan — ambijentalni zvukovi su aktivni.");
+                LogToMainWindow("🔊 Lokalna zvučna biblioteka pronađena — ambijentalni zvukovi su aktivni.");
             }
             else
             {
-                LogToMainWindow("⚠️ Freesound API ključ nije podešen. Ambijentalni zvukovi neće biti dostupni.");
+                LogToMainWindow("⚠️ Assets/Sounds/ prazan ili ne postoji — ambijentalni zvukovi neće biti dostupni.");
                 _enableAmbientSounds = false;
                 if (chkAmbientSounds != null) chkAmbientSounds.IsChecked = false;
                 if (chkAmbientSounds != null) chkAmbientSounds.IsEnabled = false;
             }
         }
 
-        private void PromptFreesoundKey()
-        {
-            var result = WpfMessageBox.Show(
-                "Freesound API ključ nije podešen.\n\nFreesound.org je besplatan servis koji pruža visokokvalitetne ambijentalne zvukove.\n\nDa li želiš unijeti Freesound API ključ sada?",
-                "🔊 Freesound ambijentalni zvukovi",
-                MessageBoxButton.YesNo, MessageBoxImage.Question);
-
-            if (result == MessageBoxResult.Yes)
-            {
-                var dlg = new ApiKeyDialog("freesound", "Freesound API ključ\n\n1. Idi na freesound.org\n2. Registruj se (besplatno)\n3. Account → Edit Profile → API Applications\n4. Kreiraj novu aplikaciju i kopiraj API key");
-
-                if (dlg.ShowDialog() == true && !string.IsNullOrEmpty(dlg.ApiKey))
-                {
-                    FreesoundClient.SaveKey(dlg.ApiKey);
-                    _freesoundKey = dlg.ApiKey;
-                    _freesound = new FreesoundClient(_freesoundKey);
-                    LogToMainWindow("✅ Freesound API ključ sačuvan — ambijentalni zvukovi aktivni!");
-                }
-            }
-        }
-
         private void btnBrowseLogo_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new WpfOpenFileDialog { Filter = "Slike|*.png;*.jpg;*.jpeg;*.bmp" };
+            var dialog = new WpfOpenFileDialog { Filter = L("filter_images") };
             if (dialog.ShowDialog() == true)
                 txtLogoPath.Text = dialog.FileName;
         }
@@ -215,7 +217,7 @@ namespace UltraVideoEditor
                 var stackPanel = new StackPanel { Orientation = WpfOrientation.Horizontal, Margin = new Thickness(5) };
                 stackPanel.Children.Add(new TextBlock { Text = $"{i + 1}. ", Width = 40, Foreground = System.Windows.Media.Brushes.White, VerticalAlignment = VerticalAlignment.Center });
                 stackPanel.Children.Add(new TextBlock { Text = _lyricLines[i], Width = 350, Foreground = System.Windows.Media.Brushes.LightGray, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
-                stackPanel.Children.Add(new TextBlock { Text = "→ AI će generisati priču...", Width = 300, Foreground = System.Windows.Media.Brushes.Gray, VerticalAlignment = VerticalAlignment.Center });
+                stackPanel.Children.Add(new TextBlock { Text = L("ai_keywords_label"), Width = 300, Foreground = System.Windows.Media.Brushes.Gray, VerticalAlignment = VerticalAlignment.Center });
                 lstKeywords.Items.Add(stackPanel);
             }
             btnGenerate.IsEnabled = _lyricLines.Count > 0;
@@ -223,14 +225,11 @@ namespace UltraVideoEditor
 
         private async void btnAutoTranscribe_Click(object sender, RoutedEventArgs e)
         {
-            // Pronalazi ucitani audio fajl iz projekta
             string audioPath = null;
 
-            // Pokusaj da uzmes putanju iz glavnog prozora (selektovani audio klip)
             var mainWindow = System.Windows.Application.Current.MainWindow as MainWindow;
             if (mainWindow != null)
             {
-                // Trazi audio klip na timeline-u
                 var audioItem = mainWindow.timelineItems
                     .FirstOrDefault(t => t.IsAudio && File.Exists(t.Path));
                 if (audioItem != null)
@@ -242,7 +241,7 @@ namespace UltraVideoEditor
                 var dlg = new Microsoft.Win32.OpenFileDialog
                 {
                     Title = "Izaberi audio fajl za transkripciju",
-                    Filter = "Audio/Video fajlovi|*.mp3;*.wav;*.flac;*.ogg;*.m4a;*.aac;*.mp4;*.avi;*.mkv;*.mov|Svi fajlovi|*.*"
+                    Filter = L("filter_audio_video")
                 };
                 if (dlg.ShowDialog() != true) return;
                 audioPath = dlg.FileName;
@@ -250,7 +249,7 @@ namespace UltraVideoEditor
 
             if (!AITranscription.IsWhisperAvailable())
             {
-                var msg = "Whisper nije instaliran na ovom racunaru." + Environment.NewLine + Environment.NewLine +
+                var msg = L("whisper_not_found_msg") + Environment.NewLine + Environment.NewLine +
                           "Instaliraj ga na jedan od ova dva nacina:" + Environment.NewLine + Environment.NewLine +
                           "OPCIJA A - Python (preporuceno):" + Environment.NewLine +
                           "  pip install openai-whisper" + Environment.NewLine + Environment.NewLine +
@@ -258,11 +257,10 @@ namespace UltraVideoEditor
                           "  Preuzmi faster-whisper-xxl.exe" + Environment.NewLine +
                           "  i stavi ga pored UltraVideoEditor.exe" + Environment.NewLine + Environment.NewLine +
                           "Nakon instalacije, ponovo pokreni aplikaciju.";
-                WpfMessageBox.Show(msg, "Whisper nije pronadjen", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(msg, L("whisper_not_found_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            // UI - zakljucaj dugme, pokazi status
             btnAutoTranscribe.IsEnabled = false;
             btnAutoTranscribe.Content = "⏳ Transkribujem...";
             if (txtTranscribeStatus != null)
@@ -286,21 +284,19 @@ namespace UltraVideoEditor
                     audioPath,
                     language: "sr",
                     ffmpegPath: ffmpegPath,
-                    modelSize: "Large-v3",
+                    modelSize: "large-v3",
                     progress: progress,
                     ct: _cts?.Token ?? CancellationToken.None);
 
                 if (!result.Success)
                 {
-                    WpfMessageBox.Show(result.ErrorMessage, "Greška pri transkripciji",
+                    WpfMessageBox.Show(result.ErrorMessage, L("transcription_error_title"),
                         MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
 
-                // Popuni txtLyrics sa prepoznatim tekstom
                 txtLyrics.Text = AITranscription.FormatLyricsForTextBox(result.Lines);
 
-                // Sacuvaj timestamp-ove za sinhronizaciju kadrova
                 _lyricTimestamps.Clear();
                 for (int i = 0; i < result.Lines.Count; i++)
                     _lyricTimestamps[i] = result.Lines[i].StartSeconds;
@@ -308,11 +304,11 @@ namespace UltraVideoEditor
                 if (txtTranscribeStatus != null)
                     txtTranscribeStatus.Text = $"✅ {result.Lines.Count} linija prepoznato";
 
-                AnnounceToUser($"Transkripcija gotova. Prepoznato {result.Lines.Count} linija teksta.", 0);
+                AnnounceToUser(LF("transcription_done", result.Lines.Count), 0);
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show($"Greška: {ex.Message}", "Greška", MessageBoxButton.OK, MessageBoxImage.Error);
+                WpfMessageBox.Show(LF("generic_error", ex.Message), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Error);
             }
             finally
             {
@@ -321,12 +317,10 @@ namespace UltraVideoEditor
             }
         }
 
-
-
         private async void btnGenerate_Click(object sender, RoutedEventArgs e)
         {
             var mainWindow = WpfApp.Current.MainWindow as MainWindow;
-            if (mainWindow == null) { WpfMessageBox.Show("MainWindow nije dostupan.", "Greška", MessageBoxButton.OK, MessageBoxImage.Error); return; }
+            if (mainWindow == null) { WpfMessageBox.Show(L("mainwindow_not_available"), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Error); return; }
 
             _enableTransitionSounds = chkTransitionSounds.IsChecked == true;
             _enableAmbientSounds = chkAmbientSounds.IsChecked == true;
@@ -343,22 +337,22 @@ namespace UltraVideoEditor
 
             if (!hasAudio)
             {
-                var result = WpfMessageBox.Show("Nema audio fajla na timeline-u.\n\nDa li želite da AI automatski generiše pozadinsku muziku?",
+                var result = WpfMessageBox.Show(L("no_audio_on_timeline"),
                     "🎵 AI Muzika", MessageBoxButton.YesNo, MessageBoxImage.Question);
 
                 if (result != MessageBoxResult.Yes)
                 {
-                    WpfMessageBox.Show("Dodajte audio fajl na timeline (Ctrl+Shift+I) prije kreiranja videa.",
-                        "Upozorenje", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    WpfMessageBox.Show(L("add_audio_manually"),
+                        L("warning"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                AnnounceToUser("AI analizira pjesmu...", 0);
+                AnnounceToUser(L("ai_analyzing_song"), 0);
                 var tempStoryBoard = await GenerateStoryBoard(_lyricLines, _cts?.Token ?? CancellationToken.None);
 
                 totalDuration = 180;
 
-                AnnounceToUser("AI traži odgovarajuću muziku...", 5);
+                AnnounceToUser(L("ai_searching_music"), 5);
                 string mood = _detectedMood ?? tempStoryBoard?.OverallTheme ?? "happy";
                 string aiMusicPath = await DownloadBackgroundMusic(mood, totalDuration, _tempVideoFolder, _cts.Token);
 
@@ -387,8 +381,8 @@ namespace UltraVideoEditor
                 }
                 else
                 {
-                    WpfMessageBox.Show("Nije moguće preuzeti AI muziku. Dodajte audio fajl ručno.",
-                        "Greška", MessageBoxButton.OK, MessageBoxImage.Error);
+                    WpfMessageBox.Show(L("ai_music_download_failed"),
+                        L("error_title"), MessageBoxButton.OK, MessageBoxImage.Error);
                     return;
                 }
             }
@@ -397,38 +391,36 @@ namespace UltraVideoEditor
                 totalDuration = audioItem.Duration;
                 if (totalDuration <= 0)
                 {
-                    WpfMessageBox.Show("Audio fajl ima nepoznato trajanje.", "Upozorenje", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    WpfMessageBox.Show(L("audio_unknown_duration"), L("warning"), MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
 
             _lyricLines = txtLyrics.Text.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
 
-            // Ako nema teksta, generisemo automatske stihove na osnovu trajanja muzike
-            // Svaki "stih" traje ~6-8 sekundi — kao da je instrumental
             if (_lyricLines.Count == 0)
             {
                 int autoSceneCount = Math.Max(4, (int)(totalDuration / 7.0));
                 _lyricLines = GenerateInstrumentalSceneDescriptions(autoSceneCount, totalDuration, _detectedContext, _detectedMood);
-                AnnounceToUser($"Nema teksta — generisem {autoSceneCount} automatskih scena za instrumental.", 0);
+                AnnounceToUser(LF("no_lyrics_generating_auto", autoSceneCount), 0);
             }
 
             _showLyrics = chkShowLyrics.IsChecked == true;
             _cts = new CancellationTokenSource();
             _isRunning = true;
             btnGenerate.IsEnabled = false;
-            btnCancel.Content = "ZAUSTAVI";
-            btnGenerate.Content = "🎬 AI kreira priču...";
+            btnCancel.Content = L("stop_button");
+            btnGenerate.Content = L("ai_creating_story");
             prgProgress.Visibility = Visibility.Visible;
-            AnnounceToUser($"Audio trajanje: {FormatTime(totalDuration)} ({totalDuration:F1}s). Analiziram {_lyricLines.Count} stihova...", 0);
+            AnnounceToUser(LF("audio_duration_analyzing", FormatTime(totalDuration), totalDuration, _lyricLines.Count), 0);
 
             try
             {
                 await ProcessVideoCreation(audioItem.Path, totalDuration);
             }
-            catch (OperationCanceledException) { AnnounceToUser("Operacija je otkazana."); }
-            catch (Exception ex) { WpfMessageBox.Show($"Greska: {ex.Message}", "Greska", MessageBoxButton.OK, MessageBoxImage.Error); }
-            finally { _isRunning = false; _cts?.Dispose(); _cts = null; btnGenerate.IsEnabled = true; btnGenerate.Content = "KREIRAJ VIDEO"; btnCancel.Content = "OTKAZI"; btnCancel.IsEnabled = true; prgProgress.Visibility = Visibility.Collapsed; txtProgress.Text = ""; }
+            catch (OperationCanceledException) { AnnounceToUser(L("operation_cancelled")); }
+            catch (Exception ex) { WpfMessageBox.Show(LF("generic_error", ex.Message), L("generic_error_title"), MessageBoxButton.OK, MessageBoxImage.Error); }
+            finally { _isRunning = false; _cts?.Dispose(); _cts = null; btnGenerate.IsEnabled = true; btnGenerate.Content = L("create_video_button"); btnCancel.Content = L("cancel_button"); btnCancel.IsEnabled = true; prgProgress.Visibility = Visibility.Collapsed; txtProgress.Text = ""; }
         }
 
         #region AI Pipeline - 3 Step Architecture
@@ -455,22 +447,26 @@ Odgovori u ovom JSON formatu:
 
             try
             {
-                LogToMainWindow("🧠 AI analizira cjelokupnu pjesmu...");
+                LogToMainWindow(L("ai_song_analyzing"));
                 string response = await _ollama.GenerateAsync(prompt, ct: ct);
                 string jsonStr = ExtractJson(response);
                 if (!string.IsNullOrEmpty(jsonStr))
                 {
                     var analysis = Newtonsoft.Json.JsonConvert.DeserializeObject<SongAnalysis>(jsonStr);
-                    if (analysis != null)
+                    bool validAnalysis = analysis != null
+                        && !string.IsNullOrWhiteSpace(analysis.Context)
+                        && !string.IsNullOrWhiteSpace(analysis.Mood);
+                    if (validAnalysis)
                     {
                         LogToMainWindow($"🎭 AI analiza: kontekst='{analysis.Context}', mood='{analysis.Mood}', tema='{analysis.Theme}'");
                         return analysis;
                     }
+                    LogToMainWindow(L("ai_empty_values"));
                 }
             }
             catch (Exception ex)
             {
-                LogToMainWindow($"⚠️ AI analiza nije uspjela ({ex.Message}), koristim keyword detekciju...");
+                LogToMainWindow(LF("ai_analysis_failed", ex.Message));
             }
 
             return FallbackSongAnalysis(lyrics);
@@ -481,7 +477,7 @@ Odgovori u ovom JSON formatu:
             string allText = string.Join(" ", lyrics).ToLower();
             var scores = new Dictionary<string, int> { ["music"] = 0, ["lullaby"] = 0, ["party"] = 0, ["love"] = 0, ["sad"] = 0, ["adventure"] = 0, ["nature"] = 0, ["dance"] = 0, ["school"] = 0, ["animal"] = 0, ["christmas"] = 0, ["outdoor"] = 0, ["seasons"] = 0, ["health"] = 0, ["fun"] = 1 };
 
-            string[] musicW  = { "muzik", "melodij", "pesm", "pjesm", "svira", "instrument", "nota", "ritam", "zvuk", "gitara", "klavir", "bubanj", "violina", "flauta", "pevaj", "pjevaj", "muzičar", "koncert", "slušaj muzik", "blago muzik" };
+            string[] musicW = { "muzik", "melodij", "pesm", "pjesm", "svira", "instrument", "nota", "ritam", "zvuk", "gitara", "klavir", "bubanj", "violina", "flauta", "pevaj", "pjevaj", "muzičar", "koncert", "slušaj muzik", "blago muzik" };
             string[] lullabyW = { "spavaj", "usni", "sni", "laku noć", "uspavanka", "sleep", "lullaby", "goodnight", "moonlight" };
             string[] partyW = { "sretan", "srećan", "rođendan", "baloni", "torta", "birthday", "party", "balloon", "cake", "celebrate" };
             string[] loveW = { "volim", "ljubav", "srce", "draga", "dragi", "love", "heart", "kiss", "hug", "romance" };
@@ -496,7 +492,7 @@ Odgovori u ovom JSON formatu:
             string[] seasonsW = { "proleće", "proljeće", "jesen", "zima", "leto", "ljeto", "spring", "autumn", "fall", "winter", "summer", "seasons" };
             string[] healthW = { "zdravlje", "zdravo", "zdravi", "kretanje", "health", "healthy", "exercise", "active", "fit", "movement" };
 
-            foreach (var w in musicW)   if (allText.Contains(w)) scores["music"] += 4;
+            foreach (var w in musicW) if (allText.Contains(w)) scores["music"] += 4;
             foreach (var w in lullabyW) if (allText.Contains(w)) scores["lullaby"] += 3;
             foreach (var w in partyW) if (allText.Contains(w)) scores["party"] += 3;
             foreach (var w in loveW) if (allText.Contains(w)) scores["love"] += 3;
@@ -521,19 +517,48 @@ Odgovori u ovom JSON formatu:
             else if (allText.Contains("leto") || allText.Contains("summer")) season = "summer";
             else if (scores["seasons"] >= 2) season = "all";
 
+            string themeByCtx = ctx switch
+            {
+                "music" => "Dječija pjesma o muzici",
+                "lullaby" => "Uspavanka",
+                "party" => "Vesela proslava",
+                "love" => "Pjesma o ljubavi",
+                "sad" => "Tužna pjesma",
+                "adventure" => "Avantura",
+                "nature" => "Priroda i životinje",
+                "dance" => "Ples i ritam",
+                "school" => "Školska pjesma",
+                "animal" => "Životinje",
+                "christmas" => "Božićna pjesma",
+                "outdoor" => "Dječija pjesma o šetnji i igri",
+                "health" => "Zdravlje i aktivnost djece",
+                _ => "Dječija pjesma"
+            };
+
             return new SongAnalysis
             {
                 Context = ctx,
                 Mood = mood,
-                Theme = "Dječija pjesma",
-                VisualStyle = "warm colors soft light natural outdoor",
-                MainSubject = "children",
+                Theme = themeByCtx,
+                VisualStyle = ctx switch
+                {
+                    "music" => "colorful bright children joyful",
+                    "outdoor" => "children park playground sunny green happy running",
+                    "health" => "children active outdoor park sunny healthy",
+                    _ => "warm colors soft light natural outdoor"
+                },
+                MainSubject = ctx switch
+                {
+                    "music" => "children singing playing music",
+                    "outdoor" => "children running playing park playground",
+                    "health" => "children active healthy outdoor",
+                    _ => "children"
+                },
                 Season = season,
                 Setting = ctx == "outdoor" || ctx == "seasons" || ctx == "health" ? "outdoors" : "mixed"
             };
         }
 
-        // MODIFICIRANA METODA: Agresivniji prompt za literalnu ilustraciju akcija
         private async Task<List<SceneKeywords>> GenerateKeywordsPerLyric(List<string> lyrics, SongAnalysis analysis, CancellationToken ct)
         {
             var results = new List<SceneKeywords>();
@@ -550,7 +575,6 @@ Odgovori u ovom JSON formatu:
 
                 string batchText = string.Join("\n", batch.Select((l, idx) => $"{batchStart + idx + 1}. {l}"));
 
-                // AGRESIVNI PROMPT sa fokusom na bukvalnu ilustraciju akcije, NE pejzaže!
                 string prompt = $@"VIDEO REŽIJA – LITERALNA ILUSTRACIJA – NEMA PEJZAŽA BEZ AKCIJE
 
 Pravilo: ŠTA STIH KAŽE, TO SE VIDEO VIDI. NEMA METAFORA. NEMA GENERIČKIH PRIZORA.
@@ -589,7 +613,7 @@ Odgovori ISKLJUČIVO JSON:
 
                 try
                 {
-                    AnnounceToUser($"AI analizira stihove {i + 1}-{Math.Min(i + batchSize, total)} (literal akcija)...", 5 + (i * 20 / total));
+                    AnnounceToUser(LF("ai_analyzing_lyrics", i + 1, Math.Min(i + batchSize, total)), 5 + (i * 20 / total));
                     string response = await _ollama.GenerateAsync(prompt, ct: ct);
                     string jsonStr = ExtractJson(response, isArray: true);
 
@@ -598,32 +622,44 @@ Odgovori ISKLJUČIVO JSON:
                         var batchResults = Newtonsoft.Json.JsonConvert.DeserializeObject<List<SceneKeywords>>(jsonStr);
                         if (batchResults != null && batchResults.Count > 0)
                         {
-                            // Validacija: ignoriši template tekst koji AI vrati bukvalno
                             foreach (var r in batchResults)
                             {
-                                // Validacija — AI je vratio template ili previše generički sadržaj
                                 bool isTemplate = string.IsNullOrEmpty(r.Keywords) ||
                                     r.Keywords.Contains("konkretna akcija") ||
                                     r.Keywords.Contains("subjekt + detalj") ||
                                     r.Keywords == "..." ||
                                     r.Keywords.Length < 5;
 
-                                // Proveri da li je AI vratio srpski tekst koji je prošao nefiltriran
                                 bool hasCyrillic = r.Keywords?.Any(c => c > 0x400 && c < 0x500) ?? false;
-                                bool hasLatin    = r.Keywords?.Any(c => "šđčćžŠĐČĆŽ".Contains(c)) ?? false;
+                                bool hasLatin = r.Keywords?.Any(c => "šđčćžŠĐČĆŽ".Contains(c)) ?? false;
 
-                                // Previše generički — isti kao što bi fallback vratio za bilo koji stih
                                 var genericPhrases = new[] { "happy child", "child playing", "children playing", "warm colors", "soft light" };
                                 bool isTooGeneric = genericPhrases.Any(p => r.Keywords?.ToLower() == p);
 
-                                if (isTemplate || hasCyrillic || hasLatin || isTooGeneric)
+                                var adultKeywords = new[] { "coffee", "beer", "wine", "whiskey", "alcohol", "office",
+                                    "business", "suit", "tie", "laptop", "computer", "meeting", "corporate",
+                                    "cigarette", "smoking", "bar ", "cocktail", "nightclub", "adult",
+                                    "toad", "frog", "frog closeup", "reptile", "insect closeup",
+                                    "rush hour", "busy street", "commute", "crowd city",
+                                    "stock market", "finance", "real estate",
+                                    "marble floor", "corridor", "hallway", "atrium", "lobby",
+                                    "indoor walk", "shopping mall", "airport terminal",
+                                    "black and white", "monochrome", "silhouette", "animation",
+                                    "cartoon", "sketch", "drawing", "illustrated",
+                                    "dark alley", "abandoned", "horror", "scary",
+                                    "cemetery", "graveyard", "funeral" };
+                                bool hasAdultContent = adultKeywords.Any(w => r.Keywords?.ToLower().Contains(w) ?? false);
+
+                                if (isTemplate || hasCyrillic || hasLatin || isTooGeneric || hasAdultContent)
                                 {
+                                    if (hasAdultContent)
+                                        LogToMainWindow(LF("ai_bad_keywords", r.Line, r.Keywords));
                                     int lyricIdx = r.Line - batchStart - 1;
                                     if (lyricIdx >= 0 && lyricIdx < batch.Count)
                                     {
                                         r.Keywords = GenerateKeywordsFromLyric(batch[lyricIdx], analysis);
-                                        r.Ambient  = InferAmbientFromLyric(batch[lyricIdx], analysis.Context);
-                                        LogToMainWindow($"   ⚠ Stih {r.Line}: AI keywords neupotrebljivi, koristim lokalni fallback");
+                                        r.Ambient = InferAmbientFromLyric(batch[lyricIdx], analysis.Context);
+                                        LogToMainWindow(LF("ai_unusable_keywords", r.Line));
                                     }
                                 }
                             }
@@ -636,10 +672,9 @@ Odgovori ISKLJUČIVO JSON:
                 }
                 catch (Exception ex)
                 {
-                    LogToMainWindow($"⚠️ Keywords batch greška: {ex.Message}");
+                    LogToMainWindow(LF("ai_keywords_error", ex.Message));
                 }
 
-                // Fallback: lokalna detekcija akcije iz teksta
                 foreach (var (lyric, idx) in batch.Select((l, idx) => (l, idx)))
                 {
                     results.Add(new SceneKeywords
@@ -665,20 +700,8 @@ Odgovori ISKLJUČIVO JSON:
             return results;
         }
 
-        /// <summary>
-        /// Gradi čist engleski Pixabay query iz keywords-a scene.
-        /// Uklanja sve srpske/bosanske reči, ćirilicu, specijalne karaktere.
-        /// Rezultat je uvek kratak (max 5 reči) čist engleski string.
-        /// </summary>
-        /// <summary>
-        /// Kad nema teksta pesme (instrumental), generiše listu opisnih "stihova"
-        /// koji vode AI da bira raznovrsne, vizuelno zanimljive kadrove.
-        /// Scena nikad ne sme biti prazna.
-        /// </summary>
         private List<string> GenerateInstrumentalSceneDescriptions(int count, double totalDuration, string context = "fun", string mood = "happy", string visualStyle = "")
         {
-            // Kontekstualni opisi prilagodeni tipu pesme
-            // Svaki tip pesme ima svoje specificne kadrove za instrumentalne delove
             string[] templates;
 
             switch (context)
@@ -686,18 +709,18 @@ Odgovori ISKLJUČIVO JSON:
                 case "music":
                     templates = new[]
                     {
-                        "music notes floating colorful background",
-                        "child playing piano keys joyful",
-                        "colorful sound waves music abstract",
-                        "children singing together choir joyful",
-                        "guitar strings vibrating music close up",
-                        "music sheet notes colorful background",
-                        "child conducting orchestra imagine",
-                        "headphones music listening child happy",
-                        "vinyl record spinning music retro",
-                        "musical instruments colorful collection",
-                        "child dancing to music joyful room",
-                        "sound waves colorful abstract music",
+                        "children singing together choir joyful colorful",
+                        "child playing piano happy lesson bright",
+                        "kids clapping hands singing music fun",
+                        "children dancing music classroom colorful",
+                        "girl boy playing guitar together happy",
+                        "child headphones listening music happy bedroom",
+                        "children instruments school band performance",
+                        "kids music class teacher colorful fun",
+                        "child microphone singing stage joyful",
+                        "children choir singing colorful concert",
+                        "boy girl dancing music living room fun",
+                        "children music notes colorful animation singing",
                     };
                     break;
 
@@ -736,7 +759,7 @@ Odgovori ISKLJUČIVO JSON:
                         "family hugging together warm golden light",
                         "children holding hands friendship",
                         "flowers blooming colorful garden",
-                        "warm sunset couple family silhouette",
+                        "family together park sunset warm golden light",
                         "mother child hugging tender moment",
                         "golden hour sunlight warm glow",
                     };
@@ -834,7 +857,7 @@ Odgovori ISKLJUČIVO JSON:
                     };
                     break;
 
-                default: // fun, outdoor, health, i sve ostalo
+                default:
                     templates = new[]
                     {
                         "children running park sunny happy",
@@ -871,42 +894,35 @@ Odgovori ISKLJUČIVO JSON:
 
         private string BuildLiteralSearchQuery(string keywords, string action, string energyBoost, string style)
         {
-            // Rečnik srpski/bosanski → engleski za česte reči u dečijim pesmama
             var srToEn = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                // Prevozna sredstva
                 {"automobil","car"}, {"auto","car"}, {"kola","car"}, {"vozilo","car"},
                 {"kamion","truck"}, {"bus","bus"}, {"autobus","bus"}, {"voz","train"},
                 {"bicikl","bicycle"}, {"motor","motorcycle"}, {"avion","airplane"},
                 {"brod","ship"}, {"čamac","boat"}, {"traktor","tractor"},
 
-                // Porodica i ljudi
                 {"mama","mother"}, {"tata","father"}, {"dete","child"}, {"djete","child"},
                 {"deca","children"}, {"djeca","children"}, {"beba","baby"},
                 {"baka","grandmother"}, {"deka","grandfather"}, {"sestra","sister"},
                 {"brat","brother"}, {"porodica","family"}, {"prijatelj","friend"},
                 {"drugar","friend"}, {"drugarica","friend"}, {"učitelj","teacher"},
 
-                // Životinje
                 {"pas","dog"}, {"mačka","cat"}, {"konj","horse"}, {"krava","cow"},
                 {"ptica","bird"}, {"ptice","birds"}, {"leptir","butterfly"},
                 {"riba","fish"}, {"zec","rabbit"}, {"medved","bear"}, {"medvjed","bear"},
                 {"lav","lion"}, {"tigar","tiger"}, {"slon","elephant"}, {"majmun","monkey"},
                 {"ovca","sheep"}, {"patka","duck"}, {"pile","chicken"}, {"svinja","pig"},
 
-                // Priroda i mesta
                 {"park","park"}, {"parkić","park"}, {"šuma","forest"}, {"suma","forest"},
                 {"plaža","beach"}, {"more","sea"}, {"reka","river"}, {"rijeka","river"},
                 {"planina","mountain"}, {"livada","meadow"}, {"bašta","garden"},
                 {"dvorište","yard"}, {"ulica","street"}, {"grad","city"},
                 {"škola","school"}, {"kuća","house"}, {"dom","home"},
 
-                // Hrana i piće
                 {"sladoled","ice cream"}, {"torta","cake"}, {"čokolada","chocolate"},
                 {"jabuka","apple"}, {"banana","banana"}, {"hleb","bread"},
                 {"čaj","tea"}, {"sok","juice"}, {"mleko","milk"},
 
-                // Radnje
                 {"trči","running"}, {"trčanje","running"}, {"šeta","walking"},
                 {"šetaj","walking"}, {"šetnja","walking"}, {"skače","jumping"},
                 {"igra","playing"}, {"pleše","dancing"}, {"peva","singing"},
@@ -915,26 +931,22 @@ Odgovori ISKLJUČIVO JSON:
                 {"pliva","swimming"}, {"vozi","riding"}, {"nosi","carrying"},
                 {"grli","hugging"}, {"smeje","laughing"}, {"plače","crying"},
 
-                // Godišnja doba i vreme
                 {"prolece","spring"}, {"proleće","spring"}, {"proljeće","spring"},
                 {"leto","summer"}, {"ljeto","summer"}, {"jesen","autumn"},
                 {"zima","winter"}, {"sneg","snow"}, {"snijeg","snow"},
                 {"kiša","rain"}, {"sunce","sun"}, {"vetar","wind"}, {"vjetar","wind"},
 
-                // Predmeti
                 {"lopta","ball"}, {"igračka","toy"}, {"lutka","doll"},
                 {"knjiga","book"}, {"olovka","pencil"}, {"torba","bag"},
                 {"kapa","hat"}, {"čizme","boots"}, {"rukavice","gloves"},
                 {"šal","scarf"}, {"kaput","coat"}, {"haljina","dress"},
 
-                // Emocije i opisi
                 {"sretan","happy"}, {"srečan","happy"}, {"vesel","joyful"},
                 {"tužan","sad"}, {"ljut","angry"}, {"uplašen","scared"},
                 {"zdravo","healthy"}, {"jako","strong"}, {"malo","little"},
                 {"veliko","big"}, {"lepo","beautiful"}, {"lijepo","beautiful"},
             };
 
-            // Spoji sve delove
             var parts = new[] { keywords, action, energyBoost, style }
                 .Where(s => !string.IsNullOrWhiteSpace(s))
                 .SelectMany(s => s.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -943,11 +955,9 @@ Odgovori ISKLJUČIVO JSON:
             var englishWords = new List<string>();
             foreach (var word in parts)
             {
-                // Ukloni specijalne karaktere, ostavi samo slova i crtice
                 string clean = System.Text.RegularExpressions.Regex.Replace(word, @"[^a-zA-ZšđčćžŠĐČĆŽ\-]", "");
                 if (string.IsNullOrEmpty(clean)) continue;
 
-                // Prevedi ako postoji u rečniku
                 if (srToEn.TryGetValue(clean, out string translated))
                 {
                     if (!englishWords.Contains(translated))
@@ -955,16 +965,12 @@ Odgovori ISKLJUČIVO JSON:
                 }
                 else
                 {
-                    // Proveri da li je čisto engleski (samo ASCII slova)
                     bool isEnglish = clean.All(c => c < 128 && char.IsLetter(c));
                     if (isEnglish && !englishWords.Contains(clean.ToLower()))
                         englishWords.Add(clean.ToLower());
-                    // Srpske reči bez prevoda se preskače — ne šaljemo ih na API
                 }
             }
 
-            // Pixabay query: max 4 konkretne reči (core), bez generičkih stilskih reči
-            // Stilske reči (warm, colors, soft, light) razblažuju preciznost — izbacujemo ih iz querija
             var styleNoise = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "warm","colors","colour","soft","light","happy","atmosphere","child","friendly",
@@ -972,15 +978,12 @@ Odgovori ISKLJUČIVO JSON:
                 "cheerful","uplifting","gentle","cozy","cosy"
             };
 
-            // Odvoji core reči od stilskih
-            var coreWords  = englishWords.Where(w => !styleNoise.Contains(w)).Take(4).ToList();
-            var styleWords = englishWords.Where(w =>  styleNoise.Contains(w)).Take(1).ToList();
+            var coreWords = englishWords.Where(w => !styleNoise.Contains(w)).Take(4).ToList();
+            var styleWords = englishWords.Where(w => styleNoise.Contains(w)).Take(1).ToList();
 
-            // Ako core prazan — uzmi sve
             if (coreWords.Count == 0)
                 coreWords = englishWords.Take(4).ToList();
 
-            // Dodaj jedan stilski hint samo ako ima manje od 3 core reči
             var finalWords = coreWords.Count < 3
                 ? coreWords.Concat(styleWords).ToList()
                 : coreWords;
@@ -988,444 +991,940 @@ Odgovori ISKLJUČIVO JSON:
             if (finalWords.Count == 0)
                 return "child playing outdoor";
 
-            return string.Join(" ", finalWords);
+            string baseQuery = string.Join(" ", finalWords);
+
+            string contextSuffix = _detectedContext switch
+            {
+                "wedding" or "love" or "romantic" => " bokeh shallow depth",
+                "documentary" or "news" => " professional cinematic",
+                "sad" or "melancholy" => " cinematic dramatic",
+                "adventure" or "sport" or "action" => " action dynamic",
+                "children" or "lullaby" or "fun" => "",
+                _ => ""
+            };
+
+            return baseQuery + contextSuffix;
         }
 
         private string GenerateKeywordsFromLyric(string lyric, SongAnalysis analysis)
         {
             string lower = lyric.ToLower();
-            string style = analysis.VisualStyle ?? "warm colors soft light";
 
-            // ── PREVOZNA SREDSTVA ─────────────────────────────────────────
-            if (lower.Contains("automobil") || lower.Contains(" auto") || lower.Contains("kola"))
-                return $"car driving street";
-            if (lower.Contains("bicikl")) return $"child riding bicycle";
-            if (lower.Contains("kamion")) return $"truck driving road";
-            if (lower.Contains("avion")) return $"airplane flying sky";
-            if (lower.Contains("voz") || lower.Contains("vozić")) return $"train station";
-            if (lower.Contains("brod") || lower.Contains("čamac")) return $"boat water sailing";
-            if (lower.Contains("traktor")) return $"tractor farm field";
+            if (lower.Contains("automobil") || lower.Contains(" auto ") || lower.Contains("kolima") ||
+                lower.Contains("autić") || lower.Contains("kola ") || lower.Contains(" kola"))
+                return "car driving street";
+            if (lower.Contains("bicikl") || lower.Contains("biciklo") || lower.Contains("biciklu"))
+                return "child riding bicycle park";
+            if (lower.Contains("trotinet") || lower.Contains("romobil"))
+                return "child riding scooter street";
+            if (lower.Contains("kamion") || lower.Contains("kamionić"))
+                return "truck driving road";
+            if (lower.Contains("avion") || lower.Contains("avionić") || lower.Contains("helikopter"))
+                return "airplane flying sky clouds";
+            if (lower.Contains("voz") || lower.Contains("vozić") || lower.Contains("lokomot"))
+                return "train railway station";
+            if (lower.Contains("brod") || lower.Contains("čamac") || lower.Contains("jedrilica") || lower.Contains("barka"))
+                return "boat sailing water";
+            if (lower.Contains("traktor") || lower.Contains("kombajn"))
+                return "tractor farm field";
+            if (lower.Contains("motor") || lower.Contains("motocikl"))
+                return "motorcycle driving road";
+            if (lower.Contains("autobus") || lower.Contains("trollej"))
+                return "bus city street children";
+            if (lower.Contains("raketa") || lower.Contains("svemirsk") || lower.Contains("svemir"))
+                return "rocket space stars universe";
+            if (lower.Contains("tenkić") || lower.Contains("tenk"))
+                return "toy tank children playing";
+            if (lower.Contains("vatrogasn") || lower.Contains("vatrogasac"))
+                return "fire truck firefighter action";
+            if (lower.Contains("policij") || lower.Contains("policajac"))
+                return "police car city";
+            if (lower.Contains("ambulant") || lower.Contains("hitna"))
+                return "ambulance medical help";
+            if (lower.Contains("skuter"))
+                return "scooter riding street";
 
-            // ── ŽIVOTINJE ─────────────────────────────────────────────────
-            if (lower.Contains(" pas") || lower.Contains("psa") || lower.Contains("psić"))
-                return $"dog playing happy";
-            if (lower.Contains("mačka") || lower.Contains("maca")) return $"cat cute";
-            if (lower.Contains("konj")) return $"horse running field";
-            if (lower.Contains("krava")) return $"cow farm meadow";
-            if (lower.Contains("leptir")) return $"butterfly flower garden";
-            if (lower.Contains("riba")) return $"fish swimming water";
-            if (lower.Contains("zec")) return $"rabbit cute";
-            if (lower.Contains("medved") || lower.Contains("medvjed")) return $"bear forest";
-            if (lower.Contains("ptic") || lower.Contains("vrabac") || lower.Contains("lastavic"))
-                return $"birds flying sky";
-            if (lower.Contains("lav")) return $"lion savanna";
-            if (lower.Contains("slon")) return $"elephant nature";
-            if (lower.Contains("patka")) return $"duck pond water";
+            if (lower.Contains(" pas ") || lower.Contains("psa ") || lower.Contains("psić") ||
+                lower.Contains("štenad") || lower.Contains("štene") || lower.Contains("psu "))
+                return "dog playing happy";
+            if (lower.Contains("mačka") || lower.Contains("maca") || lower.Contains("mačić") ||
+                lower.Contains("mace") || lower.Contains("macu"))
+                return "cat cute kitten";
+            if (lower.Contains("konj") || lower.Contains("kobila") || lower.Contains("ždreb"))
+                return "horse running field";
+            if (lower.Contains("krava") || lower.Contains("telić") || lower.Contains("tele"))
+                return "cow farm meadow";
+            if (lower.Contains("ovca") || lower.Contains("ovce") || lower.Contains("jagnje"))
+                return "sheep meadow farm";
+            if (lower.Contains("svinja") || lower.Contains("prasić") || lower.Contains("prase"))
+                return "pig farm cute";
+            if (lower.Contains("kokoška") || lower.Contains("pilic") || lower.Contains("pilić") || lower.Contains("pile"))
+                return "chicken farm chick cute";
+            if (lower.Contains("patka") || lower.Contains("pačić"))
+                return "duck pond water cute";
+            if (lower.Contains("zec") || lower.Contains("kunić") || lower.Contains("zečić"))
+                return "rabbit cute bunny";
+            if (lower.Contains("miš") || lower.Contains("hrčak"))
+                return "mouse hamster cute small animal";
+            if (lower.Contains("papagaj") || lower.Contains("papigica"))
+                return "parrot colorful bird";
 
-            // ── PORODICA I LJUDI ──────────────────────────────────────────
-            if (lower.Contains("mama") && lower.Contains("tata")) return $"family parents child walking";
-            if (lower.Contains("mama")) return $"mother child hug";
-            if (lower.Contains("tata")) return $"father child playing";
-            if (lower.Contains("baka") || lower.Contains("deka")) return $"grandparents child park";
-            if (lower.Contains("brat") || lower.Contains("sestra")) return $"siblings playing together";
-            if (lower.Contains("drugar") || lower.Contains("prijatelj")) return $"children friends playing";
-            if (lower.Contains("porodic")) return $"family outdoor together";
-            if (lower.Contains("beba")) return $"baby cute happy";
+            if (lower.Contains("lav") || lower.Contains("lavić") || lower.Contains("lavica"))
+                return "lion savanna wild";
+            if (lower.Contains("slon") || lower.Contains("slonić"))
+                return "elephant nature wild";
+            if (lower.Contains("medved") || lower.Contains("medvjed") || lower.Contains("medvedić"))
+                return "bear forest nature";
+            if (lower.Contains("leptir") || lower.Contains("leptiric"))
+                return "butterfly flower garden";
+            if (lower.Contains("pčela") || lower.Contains("bumbara") || lower.Contains("bumbar"))
+                return "bee flower honey garden";
+            if (lower.Contains("riba") || lower.Contains("ribica") || lower.Contains("ribe"))
+                return "fish swimming water aquarium";
+            if (lower.Contains("delfin"))
+                return "dolphin ocean jumping";
+            if (lower.Contains("kit"))
+                return "whale ocean water";
+            if (lower.Contains("kornjača") || lower.Contains("kornjace"))
+                return "turtle slow nature";
+            if (lower.Contains("zmija"))
+                return "snake nature grass";
+            if (lower.Contains("tigar") || lower.Contains("tigric"))
+                return "tiger wild jungle";
+            if (lower.Contains("gepard") || lower.Contains("leopard"))
+                return "cheetah running fast wild";
+            if (lower.Contains("majmun") || lower.Contains("majmunica"))
+                return "monkey jungle climbing";
+            if (lower.Contains("žirafa"))
+                return "giraffe savanna tall";
+            if (lower.Contains("kengur"))
+                return "kangaroo australia jumping";
+            if (lower.Contains("pingvin"))
+                return "penguin ice cute";
+            if (lower.Contains("polarni medved") || lower.Contains("polarni"))
+                return "polar bear arctic snow";
+            if (lower.Contains("lisica") || lower.Contains("lisičica"))
+                return "fox forest cute";
+            if (lower.Contains("vuk") || lower.Contains("vuče"))
+                return "wolf forest nature";
+            if (lower.Contains("jelen") || lower.Contains("srna"))
+                return "deer forest nature";
+            if (lower.Contains("jazavac") || lower.Contains("vjeverica") || lower.Contains("veverica"))
+                return "squirrel forest tree";
+            if (lower.Contains("krokodil") || lower.Contains("aligator"))
+                return "crocodile water wild";
+            if (lower.Contains("nilski konj") || lower.Contains("nilskog"))
+                return "hippo water wildlife";
+            if (lower.Contains("zebra"))
+                return "zebra savanna africa";
+            if (lower.Contains("nosorog"))
+                return "rhino savanna wildlife";
 
-            // ── HRANA I PIĆE ──────────────────────────────────────────────
-            if (lower.Contains("sladoled")) return $"child eating ice cream summer";
-            if (lower.Contains("čokolada")) return $"child drinking hot chocolate winter";
-            if (lower.Contains("torta") || lower.Contains("kolač")) return $"birthday cake children celebrating";
-            if (lower.Contains("jabuka")) return $"child eating apple healthy";
-            if (lower.Contains("čaj")) return $"hot tea cup warm winter";
-            if (lower.Contains("sok")) return $"child drinking juice";
+            if (lower.Contains("ptic") || lower.Contains("vrabac") || lower.Contains("lastavic") ||
+                lower.Contains("golub") || lower.Contains("sova") || lower.Contains("orao") ||
+                lower.Contains("soko") || lower.Contains("kos ") || lower.Contains("slavuj") ||
+                lower.Contains("čvorak") || lower.Contains("roda") || lower.Contains("čaplja"))
+                return "birds flying sky nature";
+            if (lower.Contains("papagaj"))
+                return "parrot colorful tropical";
 
-            // ── AKTIVNOSTI ────────────────────────────────────────────────
-            if (lower.Contains("trči") || lower.Contains("trčanje") || lower.Contains("juriš"))
-                return $"children running active";
-            if (lower.Contains("šetaj") || lower.Contains("šeta") || lower.Contains("šetnja") || lower.Contains("šeće"))
-                return $"child walking park";
-            if (lower.Contains("skoči") || lower.Contains("skači") || lower.Contains("skakanje"))
-                return $"child jumping happy";
-            if (lower.Contains("pleši") || lower.Contains("plešeš") || lower.Contains("ples"))
-                return $"children dancing joyful";
-            if (lower.Contains("peva") || lower.Contains("pjeva") || lower.Contains("pevaj"))
-                return $"child singing music";
-            if (lower.Contains("pliva") || lower.Contains("kupanje"))
-                return $"child swimming pool water";
-            if (lower.Contains("crta") || lower.Contains("slika") || lower.Contains("boji"))
-                return $"child drawing painting art";
-            if (lower.Contains("čita") || lower.Contains("knjig"))
-                return $"child reading book";
-            if (lower.Contains("igraj") || lower.Contains("igra") || lower.Contains("igraju"))
-                return $"children playing joyful";
-            if (lower.Contains("smej") || lower.Contains("smije") || lower.Contains("blistaj"))
-                return $"children laughing happy faces";
-            if (lower.Contains("spava") || lower.Contains("sanja"))
-                return $"child sleeping peaceful";
-            if (lower.Contains("grli") || lower.Contains("zagrli"))
-                return $"children hugging friendship";
-            if (lower.Contains("nosi") || lower.Contains("uzmi") || lower.Contains("drži"))
-                return $"child carrying";
-            if (lower.Contains("upoznaj") || lower.Contains("otkriva"))
-                return $"child exploring discovering";
+            if (lower.Contains("mama") && lower.Contains("tata")) return "family parents child walking";
+            if (lower.Contains("mama") || lower.Contains("majka") || lower.Contains("majko"))
+                return "mother child hug love";
+            if (lower.Contains("tata") || lower.Contains("otac") || lower.Contains("oče"))
+                return "father child playing outdoor";
+            if (lower.Contains("baka") || lower.Contains("nana") || lower.Contains("baba"))
+                return "grandmother child love tender";
+            if (lower.Contains("deka") || lower.Contains("deda") || lower.Contains("djed"))
+                return "grandfather child playing park";
+            if (lower.Contains("brat ") || lower.Contains("brate") || lower.Contains("bratić"))
+                return "siblings brothers playing";
+            if (lower.Contains("sestra") || lower.Contains("sestrica"))
+                return "sisters siblings playing";
+            if (lower.Contains("drugar") || lower.Contains("prijatelj") || lower.Contains("drug "))
+                return "children friends playing";
+            if (lower.Contains("porodic") || lower.Contains("familij"))
+                return "family outdoor together";
+            if (lower.Contains("beba") || lower.Contains("bebac") || lower.Contains("novorođen"))
+                return "baby newborn cute";
+            if (lower.Contains("dete") || lower.Contains("dijete") || lower.Contains("dječak") ||
+                lower.Contains("devojčica") || lower.Contains("djevojčica"))
+                return "child playing outdoor happy";
+            if (lower.Contains("učiteljic") || lower.Contains("nastavnic") || lower.Contains("profesor"))
+                return "teacher classroom children learning";
+            if (lower.Contains("doktor") || lower.Contains("lekar") || lower.Contains("ljekar"))
+                return "doctor children hospital care";
+            if (lower.Contains("heroj") || lower.Contains("superhero"))
+                return "superhero children playing";
+            if (lower.Contains("princeza") || lower.Contains("princ ") || lower.Contains("kralj") || lower.Contains("kraljica"))
+                return "princess prince fairy tale children";
+            if (lower.Contains("vila") || lower.Contains("vilenjak") || lower.Contains("bajk"))
+                return "fairy tale magical children";
 
-            // ── MESTA ─────────────────────────────────────────────────────
-            if (lower.Contains("parkić") || lower.Contains(" park")) return $"child playing park playground";
-            if (lower.Contains("plaža") || lower.Contains("more")) return $"child beach sea summer";
-            if (lower.Contains("šuma") || lower.Contains("suma")) return $"children forest nature";
-            if (lower.Contains("planina")) return $"mountain nature hiking";
-            if (lower.Contains("škola")) return $"school children classroom";
-            if (lower.Contains("kuća") || lower.Contains(" dom")) return $"home family cozy";
-            if (lower.Contains("dvorišt")) return $"children backyard playing";
-            if (lower.Contains("grad") || lower.Contains("ulica")) return $"city street children";
+            if (lower.Contains("sladoled") && (lower.Contains("čaj") || lower.Contains("zima") || lower.Contains("zimi")))
+                return "child eating ice cream summer park happy";
+            if (lower.Contains("sladoled")) return "child eating ice cream summer park happy";
+            if (lower.Contains("čokolada") || lower.Contains("cokolada"))
+                return "child chocolate happy";
+            if (lower.Contains("torta") || lower.Contains("kolač") || lower.Contains("cupcake"))
+                return "birthday cake children celebrating";
+            if (lower.Contains("jabuka")) return "child eating apple healthy";
+            if (lower.Contains("banana") || lower.Contains("banane"))
+                return "child eating banana fruit";
+            if (lower.Contains("jagoda") || lower.Contains("jagode") || lower.Contains("malina"))
+                return "child eating strawberry fruit summer";
+            if (lower.Contains("lubenica"))
+                return "child eating watermelon summer";
+            if (lower.Contains("pomorandža") || lower.Contains("narandža") || lower.Contains("limun"))
+                return "citrus fruit colorful fresh";
+            if (lower.Contains("čaj")) return "child drinking hot chocolate warm cozy";
+            if (lower.Contains("sok")) return "child drinking juice fresh";
+            if (lower.Contains("mleko") || lower.Contains("mlijeko"))
+                return "child drinking milk healthy";
+            if (lower.Contains("pizza"))
+                return "children eating pizza happy";
+            if (lower.Contains("palačink") || lower.Contains("crepe"))
+                return "child eating pancakes breakfast";
+            if (lower.Contains("med ") || lower.Contains("medu"))
+                return "honey jar sweet";
+            if (lower.Contains("kokice") || lower.Contains("popcorn"))
+                return "children eating popcorn movie";
+            if (lower.Contains("bombon") || lower.Contains("slatkiš") || lower.Contains("gumeni"))
+                return "child candy sweets colorful";
+            if (lower.Contains("hleb") || lower.Contains("hljeb") || lower.Contains("sendvič"))
+                return "child eating sandwich lunch";
+            if (lower.Contains("večera") || lower.Contains("ručak") || lower.Contains("doručak"))
+                return "family eating meal together";
+            if (lower.Contains("kafa") || lower.Contains("espresso"))
+                return "children drinking hot chocolate cozy winter";
+            if (lower.Contains("voda ") || lower.Contains("vodu") || lower.Contains("pijem"))
+                return "child drinking water healthy";
 
-            // ── SEZONE ────────────────────────────────────────────────────
-            if (lower.Contains("proleć") || lower.Contains("proljeć") || lower.Contains("cvet") || lower.Contains("cvijet"))
-                return $"spring flowers blooming child playing";
-            if (lower.Contains("jesen") || lower.Contains("opada")) return $"autumn leaves falling child";
-            if (lower.Contains("zima") || lower.Contains("sneg") || lower.Contains("snijeg") || lower.Contains("mraz"))
-                return $"winter snow child playing outdoor";
-            if (lower.Contains("leto") || lower.Contains("ljeto") || lower.Contains("sunce") || lower.Contains("toplo"))
-                return $"summer sunny child outdoor";
+            if (lower.Contains("trči") || lower.Contains("trčanje") || lower.Contains("juriš") ||
+                lower.Contains("trčati") || lower.Contains("trčeći"))
+                return "children running park playground sunny happy";
+            if (lower.Contains("šetaj") || lower.Contains("šeta ") || lower.Contains("šetnja") ||
+                lower.Contains("šeće") || lower.Contains("šetati") || lower.Contains("šetnjicu"))
+                return "children walking park sunny green happy";
+            if (lower.Contains("skoči") || lower.Contains("skači") || lower.Contains("skakanje") ||
+                lower.Contains("skakutanje") || lower.Contains("skokovit"))
+                return "child jumping happy";
+            if (lower.Contains("pliva") || lower.Contains("kupanje") || lower.Contains("plivanje"))
+                return "child swimming pool water";
+            if (lower.Contains("rolanje") || lower.Contains("klizanje") || lower.Contains("klizalište"))
+                return "child ice skating winter";
+            if (lower.Contains("skijanje") || lower.Contains("skija") || lower.Contains("ski"))
+                return "child skiing winter snow mountain";
+            if (lower.Contains("sankanje") || lower.Contains("sanke") || lower.Contains("saonice"))
+                return "child sledding snow winter fun";
+            if (lower.Contains("fudbal") || lower.Contains("nogomet") || lower.Contains("loptu") ||
+                lower.Contains("lopta "))
+                return "children playing football soccer";
+            if (lower.Contains("košarka") || lower.Contains("koš "))
+                return "basketball children playing";
+            if (lower.Contains("tenis") || lower.Contains("reket"))
+                return "tennis children sport";
+            if (lower.Contains("penjanje") || lower.Contains("penj") || lower.Contains("penje"))
+                return "child climbing tree playground";
+            if (lower.Contains("plivanje") || lower.Contains("surf") || lower.Contains("surfanje"))
+                return "surfing waves ocean sport";
+            if (lower.Contains("yoga") || lower.Contains("meditacij"))
+                return "yoga meditation peaceful";
+            if (lower.Contains("gimnastik") || lower.Contains("akrobat"))
+                return "gymnastics child flexible sport";
+            if (lower.Contains("karate") || lower.Contains("džudo") || lower.Contains("borilačk"))
+                return "martial arts children sport";
+            if (lower.Contains("biciklizm") || lower.Contains("vozi bicikl"))
+                return "child riding bicycle outdoor";
+            if (lower.Contains("planinar") || lower.Contains("pohod") || lower.Contains("trekking"))
+                return "hiking mountain trail nature";
+            if (lower.Contains("ribolov") || lower.Contains("pecanje"))
+                return "fishing lake child outdoor";
+            if (lower.Contains("jedrilica") || lower.Contains("jedričarenje") || lower.Contains("vesla"))
+                return "sailing boat water outdoor";
+            if (lower.Contains("padobran") || lower.Contains("skakanje padobranom"))
+                return "parachute sky adventure";
 
-            // ── ZIMSKA OPREMA ─────────────────────────────────────────────
-            if (lower.Contains("čizme") || lower.Contains("rukavice") || lower.Contains("skafander") ||
-                lower.Contains("kapu") || lower.Contains("šal") || lower.Contains("kaput"))
-                return $"child winter clothes snow outdoor";
+            if (lower.Contains("pleši") || lower.Contains("plešeš") || lower.Contains("ples") ||
+                lower.Contains("tancuj") || lower.Contains("zaigra") || lower.Contains("igra kolo"))
+                return "children dancing joyful";
+            if (lower.Contains("peva") || lower.Contains("pjeva") || lower.Contains("pevaj") ||
+                lower.Contains("pjevaj") || lower.Contains("pevanje"))
+                return "child singing music";
+            if (lower.Contains("crta") || lower.Contains("risanje") || lower.Contains("boji") ||
+                lower.Contains("bojanka") || lower.Contains("akvarelom") || lower.Contains("kistom"))
+                return "child drawing painting art colorful";
+            if (lower.Contains("čita") || lower.Contains("knjig") || lower.Contains("priča") ||
+                lower.Contains("bajka") || lower.Contains("lektir"))
+                return "child reading book library";
+            if (lower.Contains("igraj") || lower.Contains("igra ") || lower.Contains("igraju") ||
+                lower.Contains("igrajmo") || lower.Contains("igrajte"))
+                return "children playing joyful";
+            if (lower.Contains("smej") || lower.Contains("smije") || lower.Contains("blistaj") ||
+                lower.Contains("kesi") || lower.Contains("kikoće"))
+                return "children laughing happy faces";
+            if (lower.Contains("spava") || lower.Contains("toneš u san") || lower.Contains("zaspi") ||
+                lower.Contains("drijema") || lower.Contains("drijemat"))
+                return "child sleeping peaceful";
+            if (lower.Contains("sanja") || lower.Contains("snovi") || lower.Contains("snoviđ"))
+                return "child dreaming stars night sky";
+            if (lower.Contains("grli") || lower.Contains("zagrli") || lower.Contains("zagrliti") ||
+                lower.Contains("mazi") || lower.Contains("mazi"))
+                return "children hugging friendship love";
+            if (lower.Contains("ljuljaška") || lower.Contains("ljulja") || lower.Contains("tobogan"))
+                return "child playground swing slide";
+            if (lower.Contains("pesak") || lower.Contains("pješčanik") || lower.Contains("sanduk"))
+                return "child playing sand sandbox";
+            if (lower.Contains("lopta") || lower.Contains("balon") || lower.Contains("balonom"))
+                return "child playing ball balloon colorful";
+            if (lower.Contains("zmaj") || lower.Contains("zmajevima") || lower.Contains("zmajić"))
+                return "child flying kite wind outdoor";
+            if (lower.Contains("puzzle") || lower.Contains("slagalica"))
+                return "child playing puzzle indoor";
+            if (lower.Contains("lego") || lower.Contains("kocke") || lower.Contains("graditi") ||
+                lower.Contains("gradi kulu"))
+                return "child building blocks lego";
+            if (lower.Contains("skrivač") || lower.Contains("žmure") || lower.Contains("sakriven"))
+                return "children hide seek playing";
+            if (lower.Contains("karnevar") || lower.Contains("karneval") || lower.Contains("maskaradu"))
+                return "carnival costume children celebration";
+            if (lower.Contains("pozorišt") || lower.Contains("kazalište") || lower.Contains("pozornica"))
+                return "children theater stage performance";
+            if (lower.Contains("lutak") || lower.Contains("lutke") || lower.Contains("marioneta"))
+                return "puppet show children theater";
+            if (lower.Contains("cirkus"))
+                return "circus performance children";
+            if (lower.Contains("video igric") || lower.Contains("kompjuter") || lower.Contains("tablet"))
+                return "child playing video game";
+            if (lower.Contains("bazen") || lower.Contains("vodeni park"))
+                return "children water park swimming fun";
+            if (lower.Contains("piknik"))
+                return "family picnic outdoor nature";
+            if (lower.Contains("kampovanje") || lower.Contains("kamp") || lower.Contains("šator"))
+                return "camping tent nature outdoor";
+            if (lower.Contains("vatromet") || lower.Contains("svečanost") || lower.Contains("proslava"))
+                return "fireworks celebration night colorful";
 
-            // ── MUZIKA I INSTRUMENTI ──────────────────────────────────────
-            // Kombinovane specifičnosti — najpre najkonkretnije
-            if (lower.Contains("gitara") || lower.Contains("gitaru"))
-                return"child playing guitar music";
-            if (lower.Contains("klavir") || lower.Contains("piano"))
-                return"child playing piano keyboard";
-            if (lower.Contains("bubanj") || lower.Contains("bubnjevi"))
-                return"child playing drums percussion";
-            if (lower.Contains("violina"))
-                return"child playing violin music";
-            if (lower.Contains("flaut"))
-                return"child playing flute music";
-            if (lower.Contains("svira") || lower.Contains("instrument"))
-                return"child playing musical instrument";
-            if (lower.Contains("pesm") || lower.Contains("pjesm"))
-                return"child singing microphone stage";
-            if (lower.Contains("slušaj") || lower.Contains("sluša") || lower.Contains("slusaj") || lower.Contains("slušati"))
-                return"child listening headphones music";
-            if (lower.Contains("bez muzike") || lower.Contains("živeti bez") || lower.Contains("ziveti bez"))
-                return"music notes flying colorful";
-            if (lower.Contains("muzik"))
-                return"music concert stage children";
+            if (lower.Contains("uči") || lower.Contains("učiti") || lower.Contains("nauči") ||
+                lower.Contains("uciti") || lower.Contains("uciš"))
+                return "child learning school studying";
+            if (lower.Contains("škola") || lower.Contains("razred") || lower.Contains("učionica"))
+                return "school children classroom learning";
+            if (lower.Contains("domaći zadatak") || lower.Contains("zadatak") || lower.Contains("domaći"))
+                return "child doing homework studying";
+            if (lower.Contains("pismo") || lower.Contains("pisanje") || lower.Contains("piše"))
+                return "child writing letter paper";
+            if (lower.Contains("muzička škola") || lower.Contains("hora") || lower.Contains("hor "))
+                return "children choir singing school";
+            if (lower.Contains("kuvanje") || lower.Contains("kuva") || lower.Contains("pravi kolač"))
+                return "child cooking baking kitchen";
+            if (lower.Contains("fotografij") || lower.Contains("fotoaparat") || lower.Contains("slika prirodu"))
+                return "child photography camera nature";
+            if (lower.Contains("pravi") || lower.Contains("izrađuj") || lower.Contains("kreacij"))
+                return "child crafts making creative";
+            if (lower.Contains("origami") || lower.Contains("papir"))
+                return "child paper crafts origami";
+            if (lower.Contains("botanik") || lower.Contains("biljke") || lower.Contains("cvećara"))
+                return "child gardening plants flowers";
+            if (lower.Contains("sadi") || lower.Contains("zaliva") || lower.Contains("bašta"))
+                return "child planting garden watering";
 
-            // ── POSEBNE FRAZE ─────────────────────────────────────────────
-            if (lower.Contains("blago") || lower.Contains("najveć") || lower.Contains("dragocen"))
-                return"treasure gift golden child excited";
-            if (lower.Contains("počni dan") || lower.Contains("pocni dan") || lower.Contains("jutro") || lower.Contains("zora") || lower.Contains("osvanu"))
-                return"child morning waking up sunrise";
-            if (lower.Contains("završi dan") || lower.Contains("zavrsi dan") || lower.Contains("veče") || lower.Contains("noć") || lower.Contains("laku noć"))
-                return"child evening bedtime stars";
-            if (lower.Contains("brza") || lower.Contains("zaigra") || lower.Contains("tancuj"))
-                return"children dancing fast energetic";
-            if (lower.Contains("lagana") || lower.Contains("zadrema") || lower.Contains("sporo") || lower.Contains("tiho"))
-                return"child calm relaxing peaceful";
-            if (lower.Contains("rast") || lower.Contains("sazrev") || lower.Contains("učiti") || lower.Contains("uciti") || lower.Contains("nauči"))
-                return"child learning growing school";
-            if (lower.Contains("osećanj") || lower.Contains("osjećanj") || lower.Contains("srce") || lower.Contains("duša"))
-                return"child expressive emotional face";
-            if (lower.Contains("uživanj") || lower.Contains("uzivanj") || lower.Contains("simbol") || lower.Contains("sreća") || lower.Contains("sreca"))
-                return"child happiness joy celebration";
-            if (lower.Contains("zajedno") || lower.Contains("svi") || lower.Contains("svi mi"))
-                return"children group together happy";
-            if (lower.Contains("priroda") || lower.Contains("sve oko"))
-                return"nature outdoor children exploring";
+            if (lower.Contains("parkić") || lower.Contains(" park ") || lower.Contains("parku"))
+                return "children playing park playground sunny happy";
+            if (lower.Contains("plaža") || lower.Contains("more ") || lower.Contains("mora") ||
+                lower.Contains("obala") || lower.Contains("pesak mora"))
+                return "child beach sea summer";
+            if (lower.Contains("šuma") || lower.Contains("šumi") || lower.Contains("šumarak"))
+                return "children forest nature trees";
+            if (lower.Contains("planina") || lower.Contains("vrh") || lower.Contains("planinski"))
+                return "mountain nature hiking landscape";
+            if (lower.Contains("reka") || lower.Contains("potok") || lower.Contains("reci") ||
+                lower.Contains("riječica"))
+                return "river stream water nature";
+            if (lower.Contains("jezero") || lower.Contains("jezerc"))
+                return "lake water nature reflection";
+            if (lower.Contains("livada") || lower.Contains("polje") || lower.Contains("njiva"))
+                return "meadow flowers field nature";
+            if (lower.Contains("bašta") || lower.Contains("vrt ") || lower.Contains("vrtu"))
+                return "garden flowers colorful outdoor";
+            if (lower.Contains("pećina") || lower.Contains("spilja"))
+                return "cave nature adventure";
+            if (lower.Contains("vodopad") || lower.Contains("kaskad"))
+                return "waterfall nature beautiful";
+            if (lower.Contains("desert") || lower.Contains("pustinja"))
+                return "desert sand dunes landscape";
+            if (lower.Contains("džungla") || lower.Contains("prašuma"))
+                return "jungle tropical nature";
+            if (lower.Contains("arktik") || lower.Contains("antarktik") || lower.Contains("led ") ||
+                lower.Contains("ledenjak"))
+                return "arctic ice polar landscape";
+            if (lower.Contains("nebo ") || lower.Contains("nebom") || lower.Contains("oblaci") ||
+                lower.Contains("oblak"))
+                return "sky clouds blue beautiful";
+            if (lower.Contains("zvezdano nebo") || lower.Contains("zvezde") || lower.Contains("zvijezde"))
+                return "night sky stars milky way";
+            if (lower.Contains("mesec ") || lower.Contains("mjesec ") || lower.Contains("punog meseca"))
+                return "moon night sky stars";
+            if (lower.Contains("sunce") || lower.Contains("sunčano") || lower.Contains("sunčani"))
+                return "sunshine bright sunny outdoor";
+            if (lower.Contains("duga") || lower.Contains("dugom"))
+                return "rainbow colorful sky nature";
+            if (lower.Contains("kiša") || lower.Contains("kišica") || lower.Contains("kaplje"))
+                return "rain drops children playing puddle";
+            if (lower.Contains("oluja") || lower.Contains("grmljavina") || lower.Contains("munja"))
+                return "storm lightning dramatic sky";
+            if (lower.Contains("magla") || lower.Contains("izmaglica"))
+                return "fog misty morning nature";
+            if (lower.Contains("vetar") || lower.Contains("vjetar") || lower.Contains("povjetarac"))
+                return "wind blowing leaves nature";
 
-            // ── OPŠTI FALLBACK SA AI KONTEKSTOM ──────────────────────────
-            // Kada stih nema konkretnu sliku, koristimo AI analizu pesme
+            if (lower.Contains("grad ") || lower.Contains("gradu") || lower.Contains("gradić"))
+                return "city street urban children";
+            if (lower.Contains("ulica") || lower.Contains("ulici") || lower.Contains("trotoar"))
+                return "street sidewalk city";
+            if (lower.Contains("kuća") || lower.Contains("kući") || lower.Contains(" dom ") ||
+                lower.Contains("doma") || lower.Contains("domov"))
+                return "home family house cozy";
+            if (lower.Contains("dvorišt") || lower.Contains("dvorište"))
+                return "children backyard playing";
+            if (lower.Contains("zoo") || lower.Contains("zoološki") || lower.Contains("zoovrt"))
+                return "zoo animals children visiting";
+            if (lower.Contains("muzej") || lower.Contains("galerij"))
+                return "museum children visit art";
+            if (lower.Contains("bioskop") || lower.Contains("kino") || lower.Contains("film"))
+                return "cinema movie children popcorn";
+            if (lower.Contains("bibliotek") || lower.Contains("knjižnica"))
+                return "library books children reading";
+            if (lower.Contains("tržni centar") || lower.Contains("prodavnica") || lower.Contains("prodavaonica"))
+                return "shopping mall children family";
+            if (lower.Contains("crkva") || lower.Contains("džamija") || lower.Contains("hram"))
+                return "church architecture peaceful";
+            if (lower.Contains("bolnica"))
+                return "hospital doctor care";
+            if (lower.Contains("aerodrom"))
+                return "airport airplane travel";
+            if (lower.Contains("kolodvor") || lower.Contains("železnička stanica") || lower.Contains("stanica"))
+                return "train station travel";
+            if (lower.Contains("luka") || lower.Contains("pristanište"))
+                return "harbor boats port";
+            if (lower.Contains("tržnica") || lower.Contains("pijaca") || lower.Contains("pijaci"))
+                return "market colorful food outdoor";
+            if (lower.Contains("kafić") || lower.Contains("restoran"))
+                return "cafe restaurant family";
+            if (lower.Contains("hotel") || lower.Contains("odmor") || lower.Contains("ljetovanje") ||
+                lower.Contains("letovanje"))
+                return "hotel vacation family travel";
+
+            if (lower.Contains("proleć") || lower.Contains("proljeć") || lower.Contains("cvet") ||
+                lower.Contains("cvijet") || lower.Contains("trešnja cveta") || lower.Contains("latica"))
+                return "spring flowers blooming child";
+            if (lower.Contains("jesen") || lower.Contains("opada") || lower.Contains("jesenj") ||
+                lower.Contains("žuto lišće") || lower.Contains("zlatno lišće"))
+                return "autumn leaves falling colorful";
+            if (lower.Contains("zima ") || lower.Contains("zimska") || lower.Contains("zimski") ||
+                lower.Contains("sneg ") || lower.Contains("snijeg") || lower.Contains("mraz"))
+                return "winter snow child playing outdoor";
+            if (lower.Contains("leto ") || lower.Contains("ljeto") || lower.Contains("letnji") ||
+                lower.Contains("ljetni") || lower.Contains("toplo") || lower.Contains("vrelo"))
+                return "summer sunny outdoor children";
+
+            if (lower.Contains("čizme") || lower.Contains("gumene čizme"))
+                return "child winter boots snow";
+            if (lower.Contains("rukavice"))
+                return "child winter gloves snow";
+            if (lower.Contains("skafander") || lower.Contains("kombinezon"))
+                return "child winter suit snow outdoor";
+            if (lower.Contains("kapa ") || lower.Contains("kapu") || lower.Contains("šešir"))
+                return "child hat winter colorful";
+            if (lower.Contains("šal ") || lower.Contains("šalom"))
+                return "child scarf winter cozy";
+            if (lower.Contains("kaput") || lower.Contains("jakna") || lower.Contains("mantil"))
+                return "child coat winter dressed";
+            if (lower.Contains("kupaći") || lower.Contains("plivačke naočale"))
+                return "child swimsuit pool summer";
+            if (lower.Contains("čarapa") || lower.Contains("čarape"))
+                return "colorful socks child cute";
+            if (lower.Contains("haljina") || lower.Contains("suknjica"))
+                return "girl dress colorful beautiful";
+            if (lower.Contains("pantalone") || lower.Contains("traperice"))
+                return "child casual clothes";
+            if (lower.Contains("pidžama") || lower.Contains("pidzama"))
+                return "child pajamas bedtime cute";
+
+            if (lower.Contains("gitara") || lower.Contains("gitaru") || lower.Contains("gitarom"))
+                return "child playing guitar music";
+            if (lower.Contains("klavir") || lower.Contains("piano") || lower.Contains("pijanino"))
+                return "child playing piano keyboard";
+            if (lower.Contains("bubanj") || lower.Contains("bubnjevi") || lower.Contains("bubi"))
+                return "child playing drums percussion";
+            if (lower.Contains("violina") || lower.Contains("violinu"))
+                return "child playing violin music";
+            if (lower.Contains("flaut") || lower.Contains("flauta"))
+                return "child playing flute music";
+            if (lower.Contains("truba") || lower.Contains("trombon") || lower.Contains("saksofon"))
+                return "child playing trumpet brass music";
+            if (lower.Contains("harmonika") || lower.Contains("harmoniku"))
+                return "child playing accordion music";
+            if (lower.Contains("ukulele") || lower.Contains("mandolina"))
+                return "child playing ukulele music";
+            if (lower.Contains("svira") || lower.Contains("instrument") || lower.Contains("orkestar"))
+                return "child playing musical instrument";
+            if (lower.Contains("pesm") || lower.Contains("pjesm") || lower.Contains("pjesmica"))
+                return "child singing microphone stage";
+            if (lower.Contains("slušaj") || lower.Contains("sluša ") || lower.Contains("slušati") ||
+                lower.Contains("slušamo") || lower.Contains("slušaš"))
+                return "child listening headphones music";
+            if (lower.Contains("melodija") || lower.Contains("nota") || lower.Contains("note "))
+                return "music notes flying colorful";
+            if (lower.Contains("ritam") || lower.Contains("takt") || lower.Contains("tempo"))
+                return "music beat rhythm children dancing";
+            if (lower.Contains("koncert") || lower.Contains("nastup") || lower.Contains("pozornica"))
+                return "music concert stage performance";
+            if (lower.Contains("muzik") || lower.Contains("glazb"))
+                return "music colorful notes children";
+            if (lower.Contains("radio") || lower.Contains("zvučnik"))
+                return "music radio listening colorful";
+
+            if (lower.Contains("srećan") || lower.Contains("sretna") || lower.Contains("sretan") ||
+                lower.Contains("sreća") || lower.Contains("sreca") || lower.Contains("radost") ||
+                lower.Contains("veseo") || lower.Contains("vesela"))
+                return "happy child joyful smiling";
+            if (lower.Contains("tužan") || lower.Contains("tužna") || lower.Contains("plač") ||
+                lower.Contains("suze") || lower.Contains("placem"))
+                return "child sad crying emotional";
+            if (lower.Contains("ljut") || lower.Contains("besn") || lower.Contains("srdit"))
+                return "child angry frustrated emotional";
+            if (lower.Contains("uplašen") || lower.Contains("strah") || lower.Contains("bojim"))
+                return "child scared surprised";
+            if (lower.Contains("izneneđen") || lower.Contains("iznenađenje") || lower.Contains("wow"))
+                return "child surprised amazed face";
+            if (lower.Contains("ponosan") || lower.Contains("ponosna") || lower.Contains("ponos"))
+                return "child proud achievement success";
+            if (lower.Contains("umoran") || lower.Contains("umorna") || lower.Contains("pospanost"))
+                return "child tired sleepy yawning";
+            if (lower.Contains("bolestan") || lower.Contains("bolesna") || lower.Contains("boli me"))
+                return "child sick bed rest";
+            if (lower.Contains("zdrav") || lower.Contains("zdravlje") || lower.Contains("fit"))
+                return "child healthy active outdoor";
+            if (lower.Contains("zaljubljen") || lower.Contains("voli") || lower.Contains("ljubav") ||
+                lower.Contains("srce") || lower.Contains("dragi") || lower.Contains("draga"))
+                return "love heart children friendship";
+            if (lower.Contains("osećanj") || lower.Contains("osjećanj") || lower.Contains("emocij"))
+                return "child expressive emotional face";
+            if (lower.Contains("smireno") || lower.Contains("mirno") || lower.Contains("spokojno"))
+                return "child calm peaceful serene";
+            if (lower.Contains("uzbuđen") || lower.Contains("uzbuđena") || lower.Contains("euforičan"))
+                return "child excited happy energetic";
+
+            if (lower.Contains("rođendan") || lower.Contains("rodjendan"))
+                return "birthday party children celebration cake";
+            if (lower.Contains("božić") || lower.Contains("bozic") || lower.Contains("jelka") ||
+                lower.Contains("deda mraz") || lower.Contains("santa"))
+                return "christmas tree gifts children";
+            if (lower.Contains("nova godina") || lower.Contains("silvest") || lower.Contains("doček"))
+                return "new year celebration fireworks children";
+            if (lower.Contains("uskrs") || lower.Contains("vaskrs") || lower.Contains("jaje") ||
+                lower.Contains("jaja") || lower.Contains("zec uskrs"))
+                return "easter eggs colorful spring children";
+            if (lower.Contains("halloween") || lower.Contains("noć vještica") || lower.Contains("bundeva"))
+                return "halloween pumpkin children costumes";
+            if (lower.Contains("valentinovo") || lower.Contains("srce poklanjam"))
+                return "valentines day heart love flowers";
+            if (lower.Contains("dan majki") || lower.Contains("majčin dan"))
+                return "mothers day flowers love family";
+            if (lower.Contains("dan očeva") || lower.Contains("očev dan"))
+                return "fathers day family love outdoor";
+            if (lower.Contains("školski praznici") || lower.Contains("raspust"))
+                return "school holidays children vacation";
+            if (lower.Contains("festival") || lower.Contains("svečanost"))
+                return "festival celebration colorful people";
+            if (lower.Contains("vjenčanje") || lower.Contains("venčanje") || lower.Contains("svadba"))
+                return "wedding celebration flowers";
+            if (lower.Contains("penzij") || lower.Contains("odlazak u penziju"))
+                return "retirement celebration family";
+
+            if (lower.Contains("crvena") || lower.Contains("crveno") || lower.Contains("crven"))
+                return "red color bright vibrant";
+            if (lower.Contains("plava") || lower.Contains("plavo") || lower.Contains("plav"))
+                return "blue sky water bright";
+            if (lower.Contains("zelena") || lower.Contains("zeleno") || lower.Contains("zelen"))
+                return "green nature grass outdoor";
+            if (lower.Contains("žuta") || lower.Contains("žuto") || lower.Contains("žut") ||
+                lower.Contains("sunčano žut"))
+                return "yellow sunshine bright cheerful";
+            if (lower.Contains("narančasta") || lower.Contains("narandžasta") || lower.Contains("oranž"))
+                return "orange colorful warm sunset";
+            if (lower.Contains("ljubičasta") || lower.Contains("violetna") || lower.Contains("lila"))
+                return "purple violet colorful flowers";
+            if (lower.Contains("ružičasta") || lower.Contains("roze") || lower.Contains("pink"))
+                return "pink flowers cute colorful";
+            if (lower.Contains("zlatna") || lower.Contains("zlatno") || lower.Contains("zlato"))
+                return "golden sunlight treasure bright";
+            if (lower.Contains("bela") || lower.Contains("bijela") || lower.Contains("snežno bel"))
+                return "white pure clean snow";
+            if (lower.Contains("šarena") || lower.Contains("šareno") || lower.Contains("raznobojn"))
+                return "colorful rainbow bright children";
+            if (lower.Contains("duga") || lower.Contains("duginih boja"))
+                return "rainbow colors bright beautiful";
+
+            if (lower.Contains("oči") || lower.Contains("okice") || lower.Contains("oko ") ||
+                lower.Contains("okom") || lower.Contains("pogled") || lower.Contains("gleda") ||
+                lower.Contains("vidi") || lower.Contains("otvori oči") || lower.Contains("utvori"))
+                return "child eyes open looking curious";
+            if (lower.Contains("ruke") || lower.Contains("ruku") || lower.Contains("rukom") ||
+                lower.Contains("rukica") || lower.Contains("rukice") || lower.Contains("šaka") ||
+                lower.Contains("prsti") || lower.Contains("drži se za ruku"))
+                return "child hands holding together";
+            if (lower.Contains("noge") || lower.Contains("nogama") || lower.Contains("nogice") ||
+                lower.Contains("stopala") || lower.Contains("stopalo") || lower.Contains("nožice"))
+                return "child feet walking barefoot grass";
+            if (lower.Contains("glava") || lower.Contains("glavica") || lower.Contains("kosa") ||
+                lower.Contains("kosom") || lower.Contains("pletenice") || lower.Contains("frizura"))
+                return "child hair cute portrait";
+            if (lower.Contains("uši") || lower.Contains("uho") || lower.Contains("ušice") ||
+                lower.Contains("čuje") || lower.Contains("sluša") || lower.Contains("čuti"))
+                return "child listening ears music";
+            if (lower.Contains("nos") || lower.Contains("nosić") || lower.Contains("miriše") ||
+                lower.Contains("miris") || lower.Contains("vonj"))
+                return "child smelling flowers nature";
+            if (lower.Contains("usta") || lower.Contains("usne") || lower.Contains("osmeh") ||
+                lower.Contains("osmijeh") || lower.Contains("smiješak") || lower.Contains("zubi") ||
+                lower.Contains("zub ") || lower.Contains("jezik"))
+                return "child smile teeth happy portrait";
+            if (lower.Contains("lice") || lower.Contains("lica") || lower.Contains("obrazi") ||
+                lower.Contains("obraz") || lower.Contains("crvenila"))
+                return "child face portrait expression";
+            if (lower.Contains("srce ") || lower.Contains("srcem") || lower.Contains("kuca srce") ||
+                lower.Contains("srčeko"))
+                return "heart love warm feeling";
+            if (lower.Contains("stomak") || lower.Contains("trbušić") || lower.Contains("stomačić"))
+                return "child belly laughing cute";
+            if (lower.Contains("leđa") || lower.Contains("ramena") || lower.Contains("rame"))
+                return "child back shoulder outdoor";
+            if (lower.Contains("koljena") || lower.Contains("kolena") || lower.Contains("koljenice"))
+                return "child kneeling sitting outdoor";
+            if (lower.Contains("telo") || lower.Contains("tijelo") || lower.Contains("celo telo") ||
+                lower.Contains("cijelo tijelo"))
+                return "child body healthy active outdoor";
+            if (lower.Contains("koža") || lower.Contains("put") || lower.Contains("ten"))
+                return "child skin healthy outdoor";
+            if (lower.Contains("mišić") || lower.Contains("jak") || lower.Contains("snažan") ||
+                lower.Contains("snazna"))
+                return "child strong muscles active sport";
+
+            if (lower.Contains("jutro") || lower.Contains("zora") || lower.Contains("osvanu") ||
+                lower.Contains("počni dan") || lower.Contains("pocni dan") || lower.Contains("probudi"))
+                return "child morning waking up sunrise";
+            if (lower.Contains("podne") || lower.Contains("podnev"))
+                return "sunny midday outdoor children";
+            if (lower.Contains("veče") || lower.Contains("večer") || lower.Contains("sumrak") ||
+                lower.Contains("zalazak"))
+                return "sunset evening colorful sky";
+            if (lower.Contains("noć ") || lower.Contains("noću") || lower.Contains("laku noć") ||
+                lower.Contains("završi dan") || lower.Contains("zavrsi dan"))
+                return "child evening bedtime stars";
+            if (lower.Contains("ponoć") || lower.Contains("u ponoć"))
+                return "midnight stars moon night";
+
+            if (lower.Contains("sanja") || lower.Contains("snovi") || lower.Contains("maštam") ||
+                lower.Contains("sanjar"))
+                return "child dreaming stars imagination";
+            if (lower.Contains("mašta") || lower.Contains("fantazij") || lower.Contains("imaginacij"))
+                return "children imagination magical fantasy";
+            if (lower.Contains("sloboda") || lower.Contains("slobodan") || lower.Contains("leti slobodn"))
+                return "freedom outdoor running open";
+            if (lower.Contains("prijateljs") || lower.Contains("drugarst"))
+                return "children friendship together happy";
+            if (lower.Contains("ljubav") || lower.Contains("volim") || lower.Contains("voljet") ||
+                lower.Contains("ljubi"))
+                return "love children heart warm";
+            if (lower.Contains("nada") || lower.Contains("nadaj") || lower.Contains("nadamo"))
+                return "hope bright future children";
+            if (lower.Contains("mir ") || lower.Contains("miru") || lower.Contains("miran"))
+                return "peace calm nature serene";
+            if (lower.Contains("hrabrost") || lower.Contains("hrabar") || lower.Contains("odvažan"))
+                return "brave child confident strong";
+            if (lower.Contains("blago") || lower.Contains("dragocen") || lower.Contains("najveć"))
+                return "treasure gift golden child";
+            if (lower.Contains("čudo") || lower.Contains("čudesno") || lower.Contains("magičn"))
+                return "magic wonder children amazed";
+            if (lower.Contains("rast") || lower.Contains("sazrev") || lower.Contains("odrastanj"))
+                return "child growing learning achievement";
+            if (lower.Contains("zajedno") || lower.Contains("svi zajed") || lower.Contains("svi smo"))
+                return "children group together teamwork";
+            if (lower.Contains("priroda") || lower.Contains("sve oko nas") || lower.Contains("okol"))
+                return "nature outdoor children exploring";
+            if (lower.Contains("simbol") || lower.Contains("znak") || lower.Contains("moćan"))
+                return "child happiness joy celebration";
+            if (lower.Contains("kraj") || lower.Contains("završetak") || lower.Contains("finali"))
+                return "children celebration finish happy";
+            if (lower.Contains("početak") || lower.Contains("novi poče") || lower.Contains("polazak"))
+                return "child new beginning adventure";
+            if (lower.Contains("put ") || lower.Contains("putovan") || lower.Contains("avantum"))
+                return "journey adventure children travel";
+            if (lower.Contains("zvuk") || lower.Contains("buka") || lower.Contains("tišina"))
+                return "sound waves music colorful";
+            if (lower.Contains("svetlost") || lower.Contains("svjetlost") || lower.Contains("sjaj") ||
+                lower.Contains("sija") || lower.Contains("blista"))
+                return "light bright shining beautiful";
+            if (lower.Contains("tama") || lower.Contains("mrak") || lower.Contains("noćna"))
+                return "night stars moon dark sky";
+            if (lower.Contains("toplina") || lower.Contains("toplota") || lower.Contains("greje"))
+                return "warm cozy home family";
+            if (lower.Contains("hladnoć") || lower.Contains("hladno") || lower.Contains("smrzava"))
+                return "cold winter snow outdoor";
+
             if (!string.IsNullOrEmpty(analysis.Context) && !string.IsNullOrEmpty(analysis.Mood))
             {
                 string moodVisual = analysis.Mood switch
                 {
-                    "happy"     => "happy joyful bright",
-                    "calm"      => "peaceful calm serene",
-                    "excited"   => "energetic vibrant colorful",
-                    "playful"   => "playful fun children",
-                    "joyful"    => "joyful celebration bright",
+                    "happy" => "happy joyful bright",
+                    "calm" => "peaceful calm serene",
+                    "excited" => "energetic vibrant colorful",
+                    "playful" => "playful fun children",
+                    "joyful" => "joyful celebration bright",
                     "energetic" => "active dynamic movement",
-                    "upbeat"    => "cheerful bright uplifting",
-                    _           => "happy bright colorful"
+                    "upbeat" => "cheerful bright uplifting",
+                    _ => "happy bright colorful"
                 };
                 string contextVisual = analysis.Context switch
                 {
-                    "dance"   => "children dancing",
+                    "dance" => "children dancing",
                     "lullaby" => "child peaceful quiet",
-                    "party"   => "children celebrating",
-                    "nature"  => "nature outdoor green",
-                    "school"  => "children learning",
-                    "health"  => "child active outdoor",
-                    "animal"  => "animals cute",
-                    _         => "child playing"
+                    "party" => "children celebrating",
+                    "nature" => "nature outdoor green",
+                    "school" => "children learning",
+                    "health" => "child active outdoor",
+                    "animal" => "animals cute",
+                    _ => "child playing"
                 };
                 return $"{contextVisual} {moodVisual}";
             }
 
-            // ── KONTEKSTUALNI FALLBACK ────────────────────────────────────
             return analysis.Context switch
             {
-                "outdoor" => $"child outdoor activity playing",
-                "dance"   => $"children dancing joyful",
-                "lullaby" => $"child sleeping peaceful bedroom soft light",
-                "party"   => $"child celebrating birthday party",
-                "nature"  => $"children nature outdoor exploring",
-                "health"  => $"child active healthy running outdoor",
-                _         => $"child playing outdoor happy"
+                "outdoor" => "child outdoor activity playing",
+                "dance" => "children dancing joyful",
+                "lullaby" => "child sleeping peaceful bedroom soft light",
+                "party" => "child celebrating birthday party",
+                "nature" => "children nature outdoor exploring",
+                "health" => "child active healthy running outdoor",
+                _ => "child playing outdoor happy"
             };
         }
-
         private string InferAmbientFromLyric(string lyric, string context)
         {
-            // PRINCIP: Literal sync — čitam stih i vraćam TAČAN zvuk koji odgovara.
-            // Npr. "ptice pjevaju" → "birds chirping", "reka teče" → "stream flowing".
-            // KONTEKSTUALNA KOREKCIJA: ako je pjesma vesela/dječija, "zimski" stihovi
-            // dobijaju VESELE zimske zvukove (djeca u snijegu), ne zastrašujući vjetar.
             string lower = lyric.ToLower();
             bool isJoyfulContext = context is "outdoor" or "health" or "fun" or "party"
                                              or "dance" or "seasons" or "animal" or "school";
 
-            // ══════════════════════════════════════════════════════════════
-            // 1. NAJSPECIFIČNIJI ZVUCI — direktno iz teksta
-            // ══════════════════════════════════════════════════════════════
-
-            // Ptice — svako pominjanje
             if (lower.Contains("ptic") || lower.Contains("cvrkut") ||
                 lower.Contains("pjev") || lower.Contains("lastavic") ||
-                lower.Contains("vrabac") || lower.Contains("slavuj"))
-                return "birds chirping";
+                lower.Contains("vrabac") || lower.Contains("slavuj") ||
+                lower.Contains("paunov") || lower.Contains("golub"))
+                return "animal bird chirp";
 
-            // Voda — reka, potok, bujica
             if (lower.Contains("reka") || lower.Contains("rijeka") ||
                 lower.Contains("potok") || lower.Contains("bujica") ||
-                lower.Contains("izvor") || lower.Contains("voda teč"))
-                return "stream flowing";
+                lower.Contains("izvor") || lower.Contains("voda teč") ||
+                lower.Contains("fontana") || lower.Contains("česma"))
+                return "ambience creek stream";
 
-            // More / plaža / talasi
             if (lower.Contains("more") || lower.Contains("plaža") ||
                 lower.Contains("talas") || lower.Contains("obala") ||
                 lower.Contains("brod") || lower.Contains("ocean"))
-                return "ocean waves";
+                return "ambience ocean shore";
 
-            // Vjetar / povjetarac
-            if (lower.Contains("vetar") || lower.Contains("vjetar") ||
-                lower.Contains("povjetarac") || lower.Contains("duva"))
-                return isJoyfulContext ? "gentle breeze outdoor" : "wind outdoor";
+            if (lower.Contains("prska") || lower.Contains("pljas") ||
+                lower.Contains("bara") || lower.Contains("lokva"))
+                return "liquid water splash";
 
-            // Kiša
             if (lower.Contains("kiša") || lower.Contains("pada kiša") ||
-                lower.Contains("kaplja") || lower.Contains("mokro"))
-                return "gentle rain";
+                lower.Contains("kaplja") || lower.Contains("mokro") ||
+                lower.Contains("drizzle"))
+                return "weather ambience rain drips";
 
-            // Grmljavina / oluja
             if (lower.Contains("grmljavina") || lower.Contains("oluja") ||
                 lower.Contains("munja") || lower.Contains("grom"))
-                return "thunder storm";
+                return "weather ambience thunderstorm";
 
-            // Šuma / drveće / lišće
-            if (lower.Contains("šuma") || lower.Contains("suma") ||
-                lower.Contains("drveć") || lower.Contains("grana") ||
-                lower.Contains("lisće") || lower.Contains("lišće") ||
-                lower.Contains("šušti"))
-                return "forest birds nature";
+            if (lower.Contains("vetar") || lower.Contains("vjetar") ||
+                lower.Contains("povjetarac") || lower.Contains("duva"))
+                return isJoyfulContext
+                    ? "ambience nature field windy"
+                    : "weather ambience hurricane wind";
 
-            // ══════════════════════════════════════════════════════════════
-            // 2. GODIŠNJA DOBA — s kontekstualnom korekcijom
-            // ══════════════════════════════════════════════════════════════
-
-            // Proljeće
-            if (lower.Contains("proljeć") || lower.Contains("proleć") ||
-                lower.Contains("cvijet") || lower.Contains("cvece") ||
-                lower.Contains("bujanje") || lower.Contains("procvat"))
-                return "birds chirping spring";
-
-            // Ljeto / sunce / toplo
-            if (lower.Contains("leto") || lower.Contains("ljeto") ||
-                lower.Contains("sunce") || lower.Contains("toplo") ||
-                lower.Contains("vrućina") || lower.Contains("cvrčci"))
-                return "summer nature crickets";
-
-            // Jesen / lišće opada
-            if (lower.Contains("jesen") || lower.Contains("lišće pada") ||
-                lower.Contains("opada") || lower.Contains("zlatno") ||
-                lower.Contains("žuto lišće"))
-                return "autumn leaves rustling";
-
-            // Zima / snijeg — KOREKCIJA: vesele pjesme dobijaju zvukove djece u snijegu
-            // ne zastrašujući zimski vjetar
             if (lower.Contains("zima") || lower.Contains("sneg") ||
                 lower.Contains("snijeg") || lower.Contains("mraz") ||
                 lower.Contains("led") || lower.Contains("mećava"))
-            {
                 return isJoyfulContext
-                    ? "children playing snow"   // Djeca se igraju u snijegu
-                    : "winter wind snow";        // Samo za tužne/mračne kontekste
-            }
+                    ? "weather snow boots jumping"
+                    : "weather ambience blizzard";
 
-            // Specifična zimska odjeća — samo označava zimu, ne treba strašan vjetar
             if (lower.Contains("čizme") || lower.Contains("rukavice") ||
                 lower.Contains("skafander") || lower.Contains("kapu") ||
                 lower.Contains("šal") || lower.Contains("kaput"))
                 return isJoyfulContext
-                    ? "children playing snow"
-                    : "winter wind snow";
+                    ? "weather snow footstep"
+                    : "weather ambience blizzard";
 
-            // ══════════════════════════════════════════════════════════════
-            // 3. AKTIVNOSTI — zvukovi koji prate radnju
-            // ══════════════════════════════════════════════════════════════
+            if (lower.Contains("šuma") || lower.Contains("suma") ||
+                lower.Contains("drveć") || lower.Contains("grana") ||
+                lower.Contains("lisće") || lower.Contains("lišće") ||
+                lower.Contains("šušti"))
+                return "ambience nature trail";
 
-            // Trčanje / skakanje / aktivan sport
+            if (lower.Contains("proljeć") || lower.Contains("proleć") ||
+                lower.Contains("cvijet") || lower.Contains("cvece") ||
+                lower.Contains("bujanje") || lower.Contains("procvat"))
+                return "animal bird chirp";
+
+            if (lower.Contains("leto") || lower.Contains("ljeto") ||
+                lower.Contains("sunce") || lower.Contains("toplo") ||
+                lower.Contains("vrućina") || lower.Contains("cvrčci"))
+                return "animal ambience crickets";
+
+            if (lower.Contains("jesen") || lower.Contains("lišće pada") ||
+                lower.Contains("opada") || lower.Contains("zlatno") ||
+                lower.Contains("žuto lišće"))
+                return "ambience dirt road woods";
+
             if (lower.Contains("trči") || lower.Contains("trčanje") ||
                 lower.Contains("skoči") || lower.Contains("skači") ||
                 lower.Contains("blistaj") || lower.Contains("juri"))
-                return "children playing outdoor";
+                return "ambience children group playground";
 
-            // Smijeh / radost / veselje
             if (lower.Contains("smej") || lower.Contains("smije") ||
                 lower.Contains("smeh") || lower.Contains("veselo") ||
                 lower.Contains("haha") || lower.Contains("raduj"))
-                return "children laughing";
+                return "ambience children group playground";
 
-            // Šetnja / hodanje (tiho, opušteno)
             if (lower.Contains("šetaj") || lower.Contains("šetnja") ||
                 lower.Contains("hodaj") || lower.Contains("korak") ||
                 lower.Contains("prošetaj") || lower.Contains("idi"))
-                return "park ambience footsteps";
+                return "ambience nature trail";
 
-            // Igranje (opšte)
             if (lower.Contains("igraj") || lower.Contains("igra ") ||
                 lower.Contains("igrice") || lower.Contains("zabav"))
-                return "children playing outdoor";
+                return "ambience children group playground";
 
-            // ══════════════════════════════════════════════════════════════
-            // 4. MJESTA — zvuci okoline
-            // ══════════════════════════════════════════════════════════════
+            if (lower.Contains("prskal") || lower.Contains("tušir") ||
+                lower.Contains("kupan"))
+                return "ambience children sprinkler";
 
-            // Park / playground
             if (lower.Contains("park") || lower.Contains("parkić") ||
                 lower.Contains("klackalica") || lower.Contains("ljuljaška") ||
                 lower.Contains("tobogan") || lower.Contains("peskovnik"))
-                return "park ambience birds";
+                return "ambience children group playground distant";
 
-            // Grad / ulica
+            if (lower.Contains("dvorišt") || lower.Contains("bašt") ||
+                lower.Contains("vrt"))
+                return "ambience backyard road";
+
             if (lower.Contains("grad") || lower.Contains("ulica") ||
                 lower.Contains("sokak") || lower.Contains("centar"))
-                return "city park ambience";
+                return "ambience downtown area";
 
-            // Kuća / dom / unutra
             if (lower.Contains("kuća") || lower.Contains("kuca") ||
                 lower.Contains("dom") || lower.Contains("soba") ||
                 lower.Contains("unutra") || lower.Contains("topla"))
-                return "home warmth fireplace";
+                return isJoyfulContext
+                    ? "ambience backyard road"
+                    : "ambience nature 180";
 
-            // Planina / vis
             if (lower.Contains("planina") || lower.Contains("vrh") ||
                 lower.Contains("klisura") || lower.Contains("pećina"))
-                return "mountain wind birds";
+                return "ambience nature field windy";
 
-            // ══════════════════════════════════════════════════════════════
-            // 5. HRANA / PIĆE — zvuci koji asociraju na ugodan ambijent
-            // ══════════════════════════════════════════════════════════════
+            if (lower.Contains("movar") || lower.Contains("bara") ||
+                lower.Contains("ritov"))
+                return "ambience nature near swamp";
 
             if (lower.Contains("sladoled"))
-                return "summer park children";
+                return "ambience children group playground";
 
             if (lower.Contains("čaj") || lower.Contains("kakao") ||
                 lower.Contains("čokolada") || lower.Contains("topli napit"))
-                return "home warmth fireplace";
+                return isJoyfulContext
+                    ? "ambience backyard road"
+                    : "ambience nature 180";
 
             if (lower.Contains("torta") || lower.Contains("kolač") ||
-                lower.Contains("slatkiš"))
-                return "children birthday party";
-
-            // ══════════════════════════════════════════════════════════════
-            // 6. ŽIVOTINJE — direktni zvuci
-            // ══════════════════════════════════════════════════════════════
+                lower.Contains("slatkiš") || lower.Contains("roćendan"))
+                return "ambience children group playground";
 
             if (lower.Contains("pas") || lower.Contains("kučić") ||
                 lower.Contains("štene"))
-                return "dog playing outdoor";
+                return "animal dog bark";
 
             if (lower.Contains("maca") || lower.Contains("mačka") ||
                 lower.Contains("mače"))
-                return "cat purring";
+                return "animal mammal cat domestic meow";
 
             if (lower.Contains("konj") || lower.Contains("konjanik"))
-                return "horse hooves";
+                return "animal horse canters";
 
             if (lower.Contains("pčela") || lower.Contains("leptir") ||
                 lower.Contains("buba"))
-                return "summer meadow insects";
+                return "animal ambience crickets";
 
-            if (lower.Contains("zec") || lower.Contains("vjeverica"))
-                return "forest animals gentle";
+            if (lower.Contains("žaba") || lower.Contains("kvakav"))
+                return "animal frog chirp";
 
-            // ══════════════════════════════════════════════════════════════
-            // 7. PORODICA / EMOCIJE — topli ambijentalni zvuci
-            // ══════════════════════════════════════════════════════════════
+            if (lower.Contains("zec") || lower.Contains("vjeverica") ||
+                lower.Contains("jelenić"))
+                return "ambience nature trail";
+
+            if (lower.Contains("majmun") || lower.Contains("džungla"))
+                return "animal ambience jungle";
 
             if (lower.Contains("mama") || lower.Contains("majka") ||
                 lower.Contains("tata") || lower.Contains("otac"))
-                return "park ambience family";
+                return "ambience backyard road";
 
             if (lower.Contains("baka") || lower.Contains("deka") ||
                 lower.Contains("porodic"))
-                return "home warmth gentle";
+                return "ambience nature trail";
 
             if (lower.Contains("drugar") || lower.Contains("prijatelj") ||
                 lower.Contains("zajedno") || lower.Contains("svi"))
-                return "children group playing";
-
-            // ══════════════════════════════════════════════════════════════
-            // 8. SPAVANJE / NOĆ / MIROVANJE
-            // VAŽNO: Kontekstualna korekcija — u veseloj dječijoj pjesmi "noći"
-            // znači "jutro poslije noći" (ustaj, šetaj), ne noćna scena.
-            // ══════════════════════════════════════════════════════════════
+                return "ambience children group playground";
 
             if (lower.Contains("spavaj") || lower.Contains("zaspi") ||
                 lower.Contains("laku noć") || lower.Contains("usni") ||
                 lower.Contains("san ") || lower.Contains("sanjaj"))
-                return isJoyfulContext ? "park birds outdoor" : "lullaby music box";
+                return isJoyfulContext
+                    ? "animal bird chirp"
+                    : "ambience nature 180";
 
-            // "noći" u kontekstu "poslije noći" / "jutro" → park zvuci za vesele pjesme
             if (lower.Contains("noć") || lower.Contains("zvijezd") ||
                 lower.Contains("mesec") || lower.Contains("tišina"))
-                return isJoyfulContext ? "morning birds outdoor" : "night crickets gentle";
-
-            // ══════════════════════════════════════════════════════════════
-            // 9. ZDRAVLJE / SPORT / AKTIVNOST
-            // ══════════════════════════════════════════════════════════════
+                return isJoyfulContext
+                    ? "animal bird chirp"
+                    : "ambience night crickets";
 
             if (lower.Contains("zdravo") || lower.Contains("zdravlje") ||
-                lower.Contains("jako") || lower.Contains("snažno"))
-                return "park ambience birds";
+                lower.Contains("jako") || lower.Contains("snažno") ||
+                lower.Contains("sport") || lower.Contains("trening"))
+                return "ambience children group playground";
 
-            // ══════════════════════════════════════════════════════════════
-            // 10. FALLBACK PO KONTEKSTU PJESME
-            // ══════════════════════════════════════════════════════════════
             return context switch
             {
-                "lullaby"    => "lullaby music box",
-                "outdoor"    => "park birds outdoor",
-                "health"     => "park birds outdoor",
-                "nature"     => "forest stream birds",
-                "adventure"  => "forest birds outdoor",
-                "sad"        => "gentle rain",
-                "party"      => "children laughing party",
-                "christmas"  => "home warmth fireplace",
-                "animal"     => "forest animals nature",
-                "seasons"    => "birds chirping nature",
-                "dance"      => "children playing outdoor",
-                "school"     => "children playground",
-                "love"       => "park birds gentle",
-                "fun"        => "park birds outdoor",
-                _            => "birds chirping nature"
+                "lullaby" => "ambience nature 180",
+                "outdoor" => "ambience children group playground",
+                "health" => "ambience nature trail",
+                "nature" => "ambience creek stream",
+                "adventure" => "ambience nature trail",
+                "sad" => "weather ambience rain drips",
+                "party" => "ambience children group playground",
+                "christmas" => "weather snow boots jumping",
+                "animal" => "animal bird chirp",
+                "seasons" => "animal bird chirp",
+                "dance" => "ambience children group playground",
+                "school" => "ambience children group playground distant",
+                "love" => "ambience nature trail",
+                "fun" => "ambience children group playground",
+                _ => "animal bird chirp"
             };
         }
 
@@ -1452,62 +1951,11 @@ Odgovori ISKLJUČIVO JSON:
             return null;
         }
 
-        private void DetectContextFromLyrics(List<string> lyrics)
-        {
-            string allText = string.Join(" ", lyrics).ToLower();
-            var scores = new Dictionary<string, int> { ["lullaby"] = 0, ["party"] = 0, ["love"] = 0, ["sad"] = 0, ["adventure"] = 0, ["nature"] = 0, ["dance"] = 0, ["school"] = 0, ["animal"] = 0, ["christmas"] = 0, ["fun"] = 1 };
-
-            string[] lullabyWords = { "spavaj", "usni", "sni", "laku noć", "uspavanka", "sleep", "lullaby", "goodnight", "moonlight" };
-            string[] partyWords = { "sretan", "srećan", "rođendan", "baloni", "torta", "birthday", "party", "balloon", "cake", "celebrate" };
-            string[] loveWords = { "volim", "ljubav", "srce", "draga", "dragi", "love", "heart", "kiss", "hug", "romance" };
-            string[] sadWords = { "plačem", "suze", "tužan", "tuga", "cry", "tears", "sad", "alone", "lonely", "goodbye" };
-            string[] adventureWords = { "istraži", "avantura", "planina", "šuma", "adventure", "explore", "mountain", "forest", "discover" };
-            string[] natureWords = { "cvijet", "proljeće", "jesen", "zima", "ljeto", "priroda", "flower", "spring", "autumn", "winter", "summer", "nature" };
-            string[] danceWords = { "pleši", "igraj", "ples", "ritam", "dance", "dancing", "rhythm", "music", "sing" };
-            string[] schoolWords = { "škola", "učenje", "knjiga", "učitelj", "school", "learn", "book", "teacher", "class" };
-            string[] animalWords = { "pas", "maca", "konj", "zec", "ptica", "dog", "cat", "horse", "bunny", "animal" };
-            string[] xmasWords = { "božić", "nova godina", "snijeg", "jelka", "christmas", "santa", "snow", "holiday", "gift" };
-
-            foreach (var w in lullabyWords) if (allText.Contains(w)) scores["lullaby"] += 3;
-            foreach (var w in partyWords) if (allText.Contains(w)) scores["party"] += 3;
-            foreach (var w in loveWords) if (allText.Contains(w)) scores["love"] += 3;
-            foreach (var w in sadWords) if (allText.Contains(w)) scores["sad"] += 3;
-            foreach (var w in adventureWords) if (allText.Contains(w)) scores["adventure"] += 2;
-            foreach (var w in natureWords) if (allText.Contains(w)) scores["nature"] += 1;
-            foreach (var w in danceWords) if (allText.Contains(w)) scores["dance"] += 2;
-            foreach (var w in schoolWords) if (allText.Contains(w)) scores["school"] += 2;
-            foreach (var w in animalWords) if (allText.Contains(w)) scores["animal"] += 2;
-            foreach (var w in xmasWords) if (allText.Contains(w)) scores["christmas"] += 4;
-
-            string detected = scores.OrderByDescending(kv => kv.Value).First().Key;
-            _detectedContext = detected;
-
-            _detectedMood = detected switch
-            {
-                "lullaby" => "calm",
-                "sad" => "melancholy",
-                "love" => "romantic",
-                "party" => "excited",
-                "adventure" => "energetic",
-                "dance" => "upbeat",
-                "christmas" => "joyful",
-                "animal" => "playful",
-                "school" => "curious",
-                "nature" => "peaceful",
-                _ => "happy"
-            };
-
-            if (_contextKeywords.TryGetValue(detected, out var contextList))
-                _universalKeywords = new List<string>(contextList);
-
-            LogToMainWindow($"🎭 Detektovan kontekst pjesme: '{detected}', raspoloženje: '{_detectedMood}'");
-        }
-
         private async Task<StoryBoard> GenerateStoryBoard(List<string> lyrics, CancellationToken ct)
         {
             var analysis = await AnalyseSongWithAI(lyrics, ct);
-            _detectedContext = analysis.Context ?? "fun";
-            _detectedMood = analysis.Mood ?? "happy";
+            _detectedContext = string.IsNullOrWhiteSpace(analysis.Context) ? "fun" : analysis.Context;
+            _detectedMood = string.IsNullOrWhiteSpace(analysis.Mood) ? "happy" : analysis.Mood;
 
             if (_contextKeywords.TryGetValue(_detectedContext, out var ctxList))
                 _universalKeywords = new List<string>(ctxList);
@@ -1520,9 +1968,6 @@ Odgovori ISKLJUČIVO JSON:
                 var kw = perLyricKeywords.FirstOrDefault(k => k.Line == i + 1);
                 string keywords = kw?.Keywords ?? GenerateKeywordsFromLyric(lyrics[i], analysis);
                 string ambient = kw?.Ambient ?? InferAmbientFromLyric(lyrics[i], analysis.Context);
-                // Normalizuj AI ambient opis na naše mapiranje
-                // AI može vratiti slobodan tekst ("zvuk kućanstva ili restorana") —
-                // to mapiramo na konkretne Freesound querije
                 ambient = NormalizeAmbientFromAI(ambient, lyrics[i], analysis.Context ?? "outdoor");
                 int energy = CalculateEnergy(i, lyrics.Count, analysis.Context);
 
@@ -1575,7 +2020,6 @@ Odgovori ISKLJUČIVO JSON:
         {
             string lower = lyric.ToLower();
 
-            // Kretanje
             if (lower.Contains("trči") || lower.Contains("trčanje") || lower.Contains("juri")) return "running";
             if (lower.Contains("šetaj") || lower.Contains("šeta") || lower.Contains("šetnja") || lower.Contains("šeće") || lower.Contains("hoda")) return "walking";
             if (lower.Contains("skoči") || lower.Contains("skači") || lower.Contains("skakanje") || lower.Contains("poskakuje")) return "jumping";
@@ -1585,7 +2029,6 @@ Odgovori ISKLJUČIVO JSON:
             if (lower.Contains("pleši") || lower.Contains("plešeš") || lower.Contains("zaigraj") || lower.Contains("zaigra") || lower.Contains("brza") || lower.Contains("tancuj")) return "dancing";
             if (lower.Contains("penje") || lower.Contains("penjanje") || lower.Contains("penj")) return "climbing";
 
-            // Aktivnosti s predmetima
             if (lower.Contains("peva") || lower.Contains("pjeva") || lower.Contains("pevaj") || lower.Contains("pjevaj") || lower.Contains("zapeva")) return "singing";
             if (lower.Contains("svira") || lower.Contains("sviranje")) return "playing instrument";
             if (lower.Contains("crta") || lower.Contains("slika") || lower.Contains("boji") || lower.Contains("pravi")) return "drawing painting";
@@ -1594,22 +2037,18 @@ Odgovori ISKLJUČIVO JSON:
             if (lower.Contains("gradi") || lower.Contains("pravi") || lower.Contains("kocke")) return "building blocks";
             if (lower.Contains("lopta") || lower.Contains("šutiraj") || lower.Contains("baca")) return "playing ball";
 
-            // Emocije/izrazi lica
             if (lower.Contains("smej") || lower.Contains("smije") || lower.Contains("smeh") || lower.Contains("smijeh") || lower.Contains("blistaj")) return "laughing";
             if (lower.Contains("plač") || lower.Contains("suza")) return "crying";
             if (lower.Contains("grli") || lower.Contains("zagrli") || lower.Contains("mazi")) return "hugging";
             if (lower.Contains("ljubi") || lower.Contains("polj")) return "kissing cheek";
 
-            // Odmor / spavanje
             if (lower.Contains("spava") || lower.Contains("sanja") || lower.Contains("zaspi") || lower.Contains("zadrema") || lower.Contains("lagana")) return "sleeping";
             if (lower.Contains("odmara") || lower.Contains("sedi") || lower.Contains("sjedi") || lower.Contains("leži")) return "relaxing";
             if (lower.Contains("slušaj") || lower.Contains("sluša") || lower.Contains("slusaj")) return "listening";
 
-            // Jelo / piće
             if (lower.Contains("jede") || lower.Contains("jedi") || lower.Contains("sladoled") || lower.Contains("torta")) return "eating";
             if (lower.Contains("pije") || lower.Contains("pij") || lower.Contains("sok") || lower.Contains("čaj")) return "drinking";
 
-            // Istraživanje
             if (lower.Contains("upoznaj") || lower.Contains("otkriva") || lower.Contains("istražu")) return "exploring";
             if (lower.Contains("gleda") || lower.Contains("posmatra") || lower.Contains("vidi") || lower.Contains("viri")) return "watching";
 
@@ -1908,8 +2347,9 @@ Odgovori ISKLJUČIVO JSON:
 
                                 LogToMainWindow($"🎵 Preuzimam pozadinsku muziku: {hit["title"]?.ToString() ?? searchQuery}");
 
-                                byte[] data = await _httpClient.GetByteArrayAsync(audioUrl, ct);
-                                await File.WriteAllBytesAsync(outputPath, data, ct);
+                                using var dlStream = await _dlHttpClient.GetStreamAsync(audioUrl, ct);
+                                using var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                                await dlStream.CopyToAsync(fileStream, ct);
 
                                 double duration = hit["duration"]?.Value<double>() ?? 0;
                                 if (duration < targetDuration && duration > 0)
@@ -1943,15 +2383,27 @@ Odgovori ISKLJUČIVO JSON:
             if (!File.Exists(ffmpegPath))
                 return audioPath;
 
-            string args = $"-stream_loop -1 -i \"{audioPath}\" -t {targetDuration.ToString(CultureInfo.InvariantCulture)} -c copy -y \"{outputPath}\"";
+            string args = $"-nostdin -stream_loop -1 -i \"{audioPath}\" -t {targetDuration.ToString(CultureInfo.InvariantCulture)} -c copy -y \"{outputPath}\"";
             var process = new Process
             {
-                StartInfo = new ProcessStartInfo { FileName = ffmpegPath, Arguments = args, CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true }
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardInput = true
+                }
             };
             process.Start();
-            await process.WaitForExitAsync();
+            process.StandardInput.Close();
+            process.BeginOutputReadLine();
+            await process.WaitForExitAsync(ct);
 
-            return File.Exists(outputPath) ? outputPath : audioPath;
+            return (process.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length > 0)
+                ? outputPath : audioPath;
         }
 
         private async Task<double> GetAudioDuration(string audioPath)
@@ -1961,14 +2413,27 @@ Odgovori ISKLJUČIVO JSON:
                 string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
                 if (!File.Exists(ffmpegPath)) return 180.0;
 
-                string args = $"-i \"{audioPath}\" -f null - 2>&1";
+                string args = $"-nostdin -i \"{audioPath}\" -f null -";
                 var process = new Process
                 {
-                    StartInfo = new ProcessStartInfo { FileName = ffmpegPath, Arguments = args, CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true }
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = ffmpegPath,
+                        Arguments = args,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardInput = true
+                    }
                 };
                 process.Start();
-                string output = await process.StandardError.ReadToEndAsync();
+                process.StandardInput.Close();
+                var _so1 = process.StandardOutput.ReadToEndAsync();
+                var _se1 = process.StandardError.ReadToEndAsync();
+                await Task.WhenAll(_so1, _se1);
                 await process.WaitForExitAsync();
+                string output = _se1.Result;
 
                 var match = System.Text.RegularExpressions.Regex.Match(output, @"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})");
                 if (match.Success)
@@ -1985,7 +2450,7 @@ Odgovori ISKLJUČIVO JSON:
 
         #endregion
 
-        #region Audio Processing (SAMO Freesound, NEMA PIXABAY)
+        #region Audio Processing (Lokalni zvukovi — bez Freesound)
 
         private async Task<string> GetAmbientSoundPath(string soundType, string tempDir, CancellationToken ct)
         {
@@ -1997,7 +2462,6 @@ Odgovori ISKLJUČIVO JSON:
                 return null;
             }
 
-            // 1. Provjeri lokalne fajlove
             string localPath = await GetLocalAmbientSound(soundType, tempDir);
             if (localPath != null)
             {
@@ -2005,45 +2469,10 @@ Odgovori ISKLJUČIVO JSON:
                 return localPath;
             }
 
-            // 2. SAMO Freesound - NEMA PIXABAY FALLBACKA!
-            if (_freesound != null)
-            {
-                try
-                {
-                    string freesoundQuery = BuildFreesoundQuery(soundType, _detectedContext);
-                    LogToMainWindow($"🔊 Freesound pretraga: '{freesoundQuery}'");
-                    string freesoundPath = await _freesound.GetAmbientSound(freesoundQuery, tempDir);
-                    if (!string.IsNullOrEmpty(freesoundPath))
-                    {
-                        LogToMainWindow($"✅ Freesound zvuk preuzet: {freesoundQuery}");
-                        return freesoundPath;
-                    }
-                    else
-                    {
-                        LogToMainWindow($"⚠️ Freesound: nema rezultata za '{freesoundQuery}' — {_freesound.LastError ?? "nepoznata greška"}");
-                    }
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    LogToMainWindow($"⚠️ Freesound greška: {ex.Message}");
-                }
-            }
-            else
-            {
-                LogToMainWindow($"⚠️ Freesound nije inicijalizovan. Ambijentalni zvukovi nedostupni.");
-            }
-
-            LogToMainWindow($"⚠️ Nema ambijentalnog zvuka za '{soundType}'");
+            LogToMainWindow($"⚠️ Nema ambijentalnog zvuka za '{soundType}' u lokalnoj biblioteci.");
             return null;
         }
 
-        /// <summary>
-        /// Normalizuje slobodni AI tekst za ambient zvuk na naše definirane tipove.
-        /// AI može vratiti "zvuk kućanstva" ili "zvuk pješčane staze" —
-        /// ovo mapira te opise na Freesound-ready tipove.
-        /// Ako ne može mapirati, poziva InferAmbientFromLyric kao fallback.
-        /// </summary>
         private string NormalizeAmbientFromAI(string aiAmbient, string lyric, string context)
         {
             if (string.IsNullOrWhiteSpace(aiAmbient))
@@ -2051,280 +2480,392 @@ Odgovori ISKLJUČIVO JSON:
 
             string lower = aiAmbient.ToLower();
 
-            // Ako je već naš mapirani tip (iz InferAmbientFromLyric), vrati direktno
             var knownTypes = new[] {
-                "birds chirping", "stream flowing", "ocean waves", "gentle rain",
-                "park ambience", "children playing", "home warmth", "lullaby music box",
-                "morning birds", "night crickets", "forest birds", "summer nature",
-                "children playing snow", "footsteps gravel", "park outdoor birds",
-                "fireplace crackling", "indoor quiet birds", "children laughing",
-                "children snow playing", "park birds"
+                "animal bird", "ambience creek", "ambience stream", "ambience ocean",
+                "ambience nature", "ambience children", "ambience backyard",
+                "ambience downtown", "ambience dirt road", "ambience night",
+                "animal dog", "animal horse", "animal frog", "animal mammal cat",
+                "animal ambience crickets", "animal ambience jungle",
+                "weather ambience rain", "weather ambience thunderstorm",
+                "weather ambience hurricane", "weather ambience blizzard",
+                "weather snow", "liquid water"
             };
-            if (knownTypes.Any(k => lower.Contains(k.Split(' ')[0])))
+            if (knownTypes.Any(k => lower.StartsWith(k)))
                 return aiAmbient;
 
-            // Mapiraj slobodni AI tekst na naše tipove
-            // Zvuci prirode / ptica
-            if (lower.Contains("ptic") || lower.Contains("šume") || lower.Contains("prirode") ||
-                lower.Contains("drveć") || lower.Contains("šuma") || lower.Contains("grana"))
-                return InferAmbientFromLyric(lyric, context);
+            if (lower.Contains("ptic") || lower.Contains("bird") ||
+                lower.Contains("cvrkut") || lower.Contains("šume") ||
+                lower.Contains("šuma") || lower.Contains("drveć") ||
+                lower.Contains("prirode") || lower.Contains("grana"))
+                return "animal bird chirp";
 
-            // Park / šetnja
-            if (lower.Contains("park") || lower.Contains("šetanj") || lower.Contains("staza") ||
-                lower.Contains("pješčan") || lower.Contains("koraka") || lower.Contains("hodanj"))
-                return "park ambience footsteps";
+            if (lower.Contains("park") || lower.Contains("šetanj") ||
+                lower.Contains("staza") || lower.Contains("pješčan") ||
+                lower.Contains("koraka") || lower.Contains("hodanj"))
+                return "ambience nature trail";
 
-            // Djeca / igranje
-            if (lower.Contains("djec") || lower.Contains("djet") || lower.Contains("igre") ||
+            if (lower.Contains("djec") || lower.Contains("djet") || lower.Contains("child") ||
+                lower.Contains("igre") || lower.Contains("playground") ||
                 lower.Contains("kretanj") || lower.Contains("trčanj"))
-                return "children playing outdoor";
+                return "ambience children group playground";
 
-            // Zima / snijeg
             if (lower.Contains("zim") || lower.Contains("snijeg") || lower.Contains("sneg") ||
-                lower.Contains("hlad") || lower.Contains("mraz"))
-                return "children playing snow";
+                lower.Contains("snow") || lower.Contains("hlad") || lower.Contains("mraz"))
+                return "weather snow boots jumping";
 
-            // Kućanstvo / unutra / restoran
-            if (lower.Contains("kuć") || lower.Contains("restoran") || lower.Contains("unutra") ||
+            if (lower.Contains("kiša") || lower.Contains("rain") ||
+                lower.Contains("kaplja") || lower.Contains("mokro"))
+                return "weather ambience rain drips";
+
+            if (lower.Contains("grmlj") || lower.Contains("thunder") ||
+                lower.Contains("oluja") || lower.Contains("munja"))
+                return "weather ambience thunderstorm";
+
+            if (lower.Contains("vetar") || lower.Contains("wind") ||
+                lower.Contains("vjetar") || lower.Contains("povjetar"))
+                return "ambience nature field windy";
+
+            if (lower.Contains("voda") || lower.Contains("water") ||
+                lower.Contains("potok") || lower.Contains("rijeka") ||
+                lower.Contains("reka") || lower.Contains("stream"))
+                return "ambience creek stream";
+
+            if (lower.Contains("more") || lower.Contains("ocean") ||
+                lower.Contains("plaža") || lower.Contains("talas"))
+                return "ambience ocean shore";
+
+            if (lower.Contains("kuć") || lower.Contains("restoran") || lower.Contains("indoor") ||
                 lower.Contains("topli") || lower.Contains("dom") || lower.Contains("soba"))
-                return "home warmth gentle";
+                return "ambience backyard road";
 
-            // Ljeto / sladoled / sunce
-            if (lower.Contains("ljeto") || lower.Contains("leto") || lower.Contains("sunce") ||
-                lower.Contains("toplo") || lower.Contains("sladoled"))
-                return "summer park children";
+            if (lower.Contains("ljeto") || lower.Contains("leto") || lower.Contains("summer") ||
+                lower.Contains("sunce") || lower.Contains("toplo") || lower.Contains("cvrčci"))
+                return "animal ambience crickets";
 
-            // Porodica / mama / tata
-            if (lower.Contains("mama") || lower.Contains("tata") || lower.Contains("baka") ||
-                lower.Contains("deka") || lower.Contains("porodic") || lower.Contains("zajedno"))
-                return "park ambience family";
+            if (lower.Contains("noć") || lower.Contains("night") ||
+                lower.Contains("zvijezd") || lower.Contains("mesec"))
+                return "ambience night crickets";
 
-            // Fallback: pozovi InferAmbientFromLyric koji čita stih direktno
+            if (lower.Contains("džungla") || lower.Contains("jungle") ||
+                lower.Contains("tropsk") || lower.Contains("majmun"))
+                return "animal ambience jungle";
+
+            if (lower.Contains("pas") || lower.Contains("dog") ||
+                lower.Contains("kučić") || lower.Contains("bark"))
+                return "animal dog bark";
+
+            if (lower.Contains("konj") || lower.Contains("horse") ||
+                lower.Contains("kopita"))
+                return "animal horse canters";
+
+            if (lower.Contains("mačka") || lower.Contains("cat") ||
+                lower.Contains("maca") || lower.Contains("meow"))
+                return "animal mammal cat domestic meow";
+
+            if (lower.Contains("žaba") || lower.Contains("frog"))
+                return "animal frog chirp";
+
             return InferAmbientFromLyric(lyric, context);
         }
 
-        private string BuildFreesoundQuery(string soundType, string context)
+        private static Dictionary<string, List<string>> _soundIndex = null;
+        private static Dictionary<string, List<string>> _sfxIndex = null;
+        private static readonly object _soundIndexLock = new object();
+
+        private static Dictionary<string, List<string>> BuildSoundIndex(string folder)
         {
-            if (string.IsNullOrEmpty(soundType)) soundType = "nature";
-            string lower = soundType.ToLower();
+            var index = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            if (!Directory.Exists(folder)) return index;
 
-            // ══════════════════════════════════════════════════════════════
-            // DIREKTNO MAPIRANJE — svaki soundType iz InferAmbientFromLyric
-            // PRAVILO: Queriji moraju vraćati FIELD RECORDINGS, ne muziku.
-            // Kratki, precizni queriji (2-3 rijeci) bolje rade na Freesondu.
-            // Izbjegavati: "cozy", "gentle", "ambient" — vraćaju muziku.
-            // Koristiti: konkretne zvukove — "birds", "crickets", "footsteps".
-            // ══════════════════════════════════════════════════════════════
+            var supportedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { ".mp3", ".wav", ".flac", ".ogg", ".aiff", ".aif" };
 
-            // Ptice
-            if (lower.Contains("birds chirping spring"))   return "birds chirping spring";
-            if (lower.Contains("morning birds"))           return "birds morning chirping";
-            if (lower.Contains("birds chirping"))          return "birds chirping";
-            if (lower.Contains("birds outdoor"))           return "birds outdoor";
-            if (lower.Contains("birds"))                   return "birds nature";
+            foreach (string file in Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories))
+            {
+                if (!supportedExt.Contains(Path.GetExtension(file))) continue;
 
-            // Voda / potok
-            if (lower.Contains("stream flowing"))          return "stream water flowing";
-            if (lower.Contains("forest stream"))           return "forest stream water";
-            if (lower.Contains("ocean waves"))             return "ocean waves";
-            if (lower.Contains("rain"))                    return "rain outdoor";
-            if (lower.Contains("thunder"))                 return "thunder rain storm";
-            if (lower.Contains("stream") || lower.Contains("water")) return "stream water";
+                string name = Path.GetFileNameWithoutExtension(file).ToLower();
 
-            // Vjetar
-            if (lower.Contains("gentle breeze"))           return "breeze wind leaves";
-            if (lower.Contains("mountain wind"))           return "mountain wind outdoor";
-            if (lower.Contains("winter wind"))             return "wind snow winter";
-            if (lower.Contains("wind"))                    return "wind outdoor";
+                var rawTokens = System.Text.RegularExpressions.Regex.Split(name, @"[_\-\s]+");
+                var tags = new List<string>();
+                foreach (string token in rawTokens)
+                {
+                    var camel = System.Text.RegularExpressions.Regex.Replace(
+                        token, @"([a-z])([A-Z])", "$1 $2").ToLower().Split(' ');
+                    tags.AddRange(camel.Where(t => t.Length > 1));
+                }
 
-            // Djeca — konkretni zvuci, ne "party ambient"
-            if (lower.Contains("children playing snow"))   return "children snow playing";
-            if (lower.Contains("children laughing"))       return "children laughing outdoor";
-            if (lower.Contains("children group"))          return "children outdoor group";
-            if (lower.Contains("children birthday"))       return "children birthday singing";
-            if (lower.Contains("children playground"))     return "children playground";
-            if (lower.Contains("children playing"))        return "children playing outdoor";
+                tags.Add(name.Replace("_", " ").Replace("-", " "));
 
-            // Park / outdoor — konkretni zvuci
-            if (lower.Contains("park ambience footsteps")) return "footsteps gravel park";
-            if (lower.Contains("park ambience family"))    return "park outdoor birds";
-            if (lower.Contains("park ambience birds"))     return "park birds";
-            if (lower.Contains("park ambience"))           return "park birds outdoor";
-            if (lower.Contains("summer park children"))    return "summer park outdoor";
-            if (lower.Contains("city park"))               return "city park birds";
+                index[file] = tags;
+            }
 
-            // Šuma / priroda
-            if (lower.Contains("forest birds nature"))     return "forest birds";
-            if (lower.Contains("forest animals"))          return "forest animals";
-            if (lower.Contains("forest"))                  return "forest nature";
+            return index;
+        }
 
-            // Godišnja doba
-            if (lower.Contains("summer nature crickets"))  return "summer crickets";
-            if (lower.Contains("summer meadow"))           return "meadow insects summer";
-            if (lower.Contains("autumn leaves"))           return "leaves rustling wind";
+        private static string FindBestMatch(Dictionary<string, List<string>> index,
+                                            IEnumerable<string> queryTags,
+                                            HashSet<string> usedFiles = null)
+        {
+            if (index == null || index.Count == 0) return null;
 
-            // Dom / toplina — OPASNO: "cozy indoor" vraća muziku na Freesondu!
-            // Koristimo konkretne zvukove umjesto opisa raspoloženja.
-            if (lower.Contains("home warmth fireplace"))   return "fireplace crackling";
-            if (lower.Contains("home warmth gentle"))      return "indoor quiet birds";
-            if (lower.Contains("home warmth"))             return "fireplace wood crackling";
+            var queryList = queryTags
+                .Select(t => t.ToLower().Trim())
+                .Where(t => t.Length > 1)
+                .ToList();
 
-            // Noć / tišina — OPASNO: "night ambient" vraća muziku!
-            if (lower.Contains("lullaby music box"))       return "music box";
-            if (lower.Contains("lullaby"))                 return "music box gentle";
-            if (lower.Contains("night crickets"))          return "crickets night";
-            if (lower.Contains("morning birds"))           return "birds morning";
+            if (queryList.Count == 0) return null;
 
-            // Životinje — konkretni zvuci
-            if (lower.Contains("dog playing"))             return "dog outdoor";
-            if (lower.Contains("cat purring"))             return "cat purring";
-            if (lower.Contains("horse hooves"))            return "horse hooves";
-            if (lower.Contains("forest animals"))          return "forest animals";
-            if (lower.Contains("animals"))                 return "animals outdoor";
+            string bestFile = null;
+            int bestScore = 0;
 
-            // ══════════════════════════════════════════════════════════════
-            // KONTEKST FALLBACK — uvijek sigurni zvuci koji NE vraćaju muziku
-            // ══════════════════════════════════════════════════════════════
-            if (context == "lullaby")    return "music box";
-            if (context == "party")      return "children laughing";
-            if (context == "sad")        return "rain outdoor";
-            if (context == "adventure")  return "forest birds";
-            if (context == "christmas")  return "fireplace crackling";
-            if (context == "outdoor")    return "park birds";
-            if (context == "health")     return "birds outdoor";
-            if (context == "nature")     return "forest stream";
+            foreach (var (file, tags) in index)
+            {
+                if (usedFiles != null && usedFiles.Contains(file)) continue;
 
-            return "birds outdoor";
+                int score = 0;
+                foreach (string q in queryList)
+                {
+                    if (tags.Any(t => t == q)) score += 3;
+                    else if (tags.Any(t => t.Contains(q) || q.Contains(t))) score += 1;
+                }
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestFile = file;
+                }
+            }
+
+            return bestScore > 0 ? bestFile : null;
         }
 
         private async Task<string> GetLocalAmbientSound(string soundType, string tempDir)
         {
-            // ── AUTO-SKENIRANJE Assets/Sounds/ ──────────────────────────────────────────
-            // Biblioteka se automatski ažurira — dodaš fajl u folder, odmah se koristi.
-            // Nema potrebe za izmjenama koda. Podržani formati: .mp3 .wav .flac .ogg .aiff
-            //
-            // Kako matching radi:
-            //   soundType = "birds chirping spring"
-            //   Traži fajl čije ime sadrži "bird" ILI "morning" ILI "chirp" ILI "spring"
-            //   Uzima prvi match. Specifičniji soundType = bolji match.
-            //
-            // Semantička mapa: soundType ključne riječi → search tagovi po kojima skeniramo fajlove
-            var semanticMap = new List<(string keyword, string[] fileTags)>
-            {
-                // soundType keyword          → tagovi koji se traže u nazivu fajla (OR logika)
-                ("children playing snow",    new[] { "children-snow", "snow-children", "kids-snow", "children_snow" }),
-                ("children snow",            new[] { "children-snow", "snow-children", "kids-snow", "children_snow" }),
-                ("children playing",         new[] { "children-play", "kids-play", "playground", "children_play", "children-laugh" }),
-                ("children laughing",        new[] { "children-laugh", "kids-laugh", "children_laugh" }),
-                ("kids playing",             new[] { "children-play", "kids-play", "playground" }),
-                ("children",                 new[] { "children", "kids", "child" }),
-
-                ("birds chirping spring",    new[] { "morning-bird", "birds-morning", "birdsong", "morning-birdsong", "spring-bird", "morning-birds" }),
-                ("morning birds",            new[] { "morning-bird", "birds-morning", "birdsong", "morning-birdsong" }),
-                ("birds morning",            new[] { "morning-bird", "birds-morning", "birdsong" }),
-                ("birds forest",             new[] { "forest-bird", "birds-forest", "forest-ambient", "spring-forest-bird", "sunny-forest" }),
-                ("forest birds",             new[] { "forest-bird", "birds-forest", "forest-ambient", "sunny-forest" }),
-                ("birds chirping",           new[] { "bird", "chirp", "birdsong", "tweeting", "sparrow", "swallow" }),
-                ("birds outdoor",            new[] { "bird", "park-bird", "outdoor-bird", "urban-bird" }),
-                ("birds nature",             new[] { "bird", "forest-bird", "nature-bird" }),
-                ("birds",                    new[] { "bird", "chirp", "sparrow", "birdsong", "hawk", "pigeon", "duck", "swallow", "tweeting" }),
-
-                ("park ambience",            new[] { "city-park", "park-ambience", "park-ambient", "citypark", "park-pond", "downtown-park" }),
-                ("park birds",               new[] { "city-park", "park-bird", "park-ambience" }),
-                ("park outdoor",             new[] { "city-park", "park-ambience", "outdoor" }),
-                ("park ambience family",     new[] { "city-park", "park-ambience", "park-soccer", "public-park" }),
-                ("park ambience footsteps",  new[] { "footstep", "gravel", "city-park", "park-ambience" }),
-                ("outdoor",                  new[] { "city-park", "park-ambience", "garden", "outdoor", "pasture" }),
-
-                ("fireplace",                new[] { "fireplace", "fire-crackl", "campfire", "hearth" }),
-                ("fire crackling",           new[] { "fireplace", "fire-crackl", "campfire" }),
-                ("home warmth",              new[] { "fireplace", "indoor", "home", "cozy" }),
-                ("home warmth gentle",       new[] { "fireplace", "indoor", "garden", "home" }),
-                ("indoor warmth",            new[] { "fireplace", "indoor" }),
-                ("christmas",                new[] { "fireplace", "christmas", "winter-indoor" }),
-
-                ("stream flowing",           new[] { "stream", "creek", "brook", "river", "water-flow" }),
-                ("forest stream",            new[] { "stream", "creek", "forest-water", "brook" }),
-                ("stream water",             new[] { "stream", "creek", "brook", "pond", "river" }),
-                ("water stream",             new[] { "stream", "creek", "pond", "water" }),
-                ("stream",                   new[] { "stream", "creek", "brook", "river", "pond" }),
-                ("water",                    new[] { "stream", "creek", "pond", "ocean", "lake", "water" }),
-
-                ("gentle rain",              new[] { "rain", "rainfall", "rainandrumble", "rain-rumble" }),
-                ("soft rain",                new[] { "rain", "rainfall", "drizzle" }),
-                ("rain outdoor",             new[] { "rain", "rainfall" }),
-                ("rain",                     new[] { "rain", "rainfall", "rainandrumble" }),
-                ("sad",                      new[] { "rain", "rainfall", "wind" }),
-
-                ("summer nature crickets",   new[] { "cricket", "insect", "cicada", "summer-insect" }),
-                ("night crickets",           new[] { "cricket", "insect", "night-insect", "cicada" }),
-                ("summer crickets",          new[] { "cricket", "insect", "cicada" }),
-                ("crickets",                 new[] { "cricket", "insect", "cicada" }),
-                ("summer nature",            new[] { "cricket", "summer", "insect", "sunny-forest", "garden" }),
-
-                ("footsteps gravel",         new[] { "footstep", "gravel", "walking-gravel", "steps-gravel" }),
-                ("gravel footsteps",         new[] { "footstep", "gravel", "steps" }),
-                ("footsteps",                new[] { "footstep", "step", "walking", "gravel" }),
-
-                ("ocean waves",              new[] { "ocean", "wave", "sea", "oceanwave" }),
-                ("ocean",                    new[] { "ocean", "wave", "sea" }),
-                ("wind",                     new[] { "wind", "windy", "breeze" }),
-                ("gentle wind",              new[] { "wind", "windy", "breeze", "gentle-wind" }),
-
-                ("forest ambience",          new[] { "forest", "forestsurround", "forest-ambient", "sunny-forest", "forest-ambient" }),
-                ("forest",                   new[] { "forest", "forestsurround", "woodland", "sunny-forest" }),
-                ("nature",                   new[] { "forest", "garden", "nature", "outdoor", "bird", "park" }),
-                ("mountain",                 new[] { "forest", "wind", "mountain", "outdoor" }),
-
-                ("lullaby",                  new[] { "rain", "gentle", "soft", "calm" }),
-                ("sleep",                    new[] { "rain", "gentle", "calm", "night" }),
-                ("night",                    new[] { "cricket", "insect", "night", "evening" }),
-                ("city",                     new[] { "city-park", "citypark", "urban", "cityhum" }),
-            };
-
-            string lower = soundType?.ToLower() ?? string.Empty;
             string soundsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Sounds");
 
-            if (!Directory.Exists(soundsDir))
+            lock (_soundIndexLock)
             {
-                LogToMainWindow($"⚠️ Assets/Sounds/ folder nije pronađen");
-                return null;
-            }
-
-            // Učitaj sve fajlove jednom (cache unutar poziva)
-            var supportedExt = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".mp3", ".wav", ".flac", ".ogg", ".aiff" };
-            var allFiles = Directory.GetFiles(soundsDir)
-                .Where(f => supportedExt.Contains(Path.GetExtension(f)))
-                .ToList();
-
-            foreach (var (keyword, fileTags) in semanticMap)
-            {
-                if (!lower.Contains(keyword)) continue;
-
-                // Traži fajl čije ime sadrži bilo koji od tagova (case-insensitive)
-                foreach (string tag in fileTags)
+                if (_soundIndex == null)
                 {
-                    string found = allFiles.FirstOrDefault(f =>
-                        Path.GetFileNameWithoutExtension(f)
-                            .ToLower()
-                            .Replace("_", "-")
-                            .Contains(tag.ToLower()));
-
-                    if (found != null)
-                    {
-                        string ext = Path.GetExtension(found);
-                        string outputPath = Path.Combine(tempDir, $"ambient_{Guid.NewGuid().ToString().Substring(0, 8)}{ext}");
-                        await Task.Run(() => File.Copy(found, outputPath, true));
-                        LogToMainWindow($"🔊 Lokalni zvuk: '{Path.GetFileName(found)}' za '{soundType}'");
-                        return outputPath;
-                    }
+                    _soundIndex = BuildSoundIndex(soundsDir);
+                    LogToMainWindow($"🎵 Zvučni indeks: {_soundIndex.Count} fajlova u Assets/Sounds/");
                 }
             }
 
-            // Nijedan lokalni fajl nije pronađen → Freesound fallback
-            LogToMainWindow($"🔊 Nema lokalnog zvuka za '{soundType}', koristim Freesound fallback");
+            if (_soundIndex.Count == 0)
+            {
+                LogToMainWindow($"⚠️ Assets/Sounds/ prazan ili ne postoji");
+                return null;
+            }
+
+            bool isOutdoorContext = _detectedContext is "outdoor" or "health" or "fun" or "party"
+                                    or "dance" or "seasons" or "animal" or "school" or "nature"
+                                    or "adventure" or "love" or "";
+
+            var outdoorBlacklistTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "boiler", "factory", "transmission", "collision", "workshop", "repair",
+                "construction", "wood chipper", "turbine", "generator", "compressor",
+                "parking", "garage", "stairway", "restroom", "bathroom", "toilet",
+                "sewer", "drain", "lockdown", "police", "dispatch", "scanner",
+                "theater", "concession", "popcorn", "bowling", "hockey", "ice rink",
+                "helicopter", "airplane", "plane", "train yard", "welding",
+                "shipping", "stamp", "bottle return", "grocery", "vending",
+                "interior", "inside", "indoor",
+                "air conditioner", "ceiling fan", "platform fans", "appliance",
+                "car drive", "car interior", "car parked", "car wash", "car exterior",
+                "driving", "van driving", "road after rain from van",
+                "machine", "equipment", "electrical", "lockdown",
+            };
+
+            var queryTags = soundType.ToLower()
+                .Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(t => t.Length > 2)
+                .ToList();
+
+            var synonymMap = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["bird"] = new[] { "animal", "chirp", "goldfinch", "cowbird", "vireo", "tanager", "pewee", "stilt" },
+                ["chirp"] = new[] { "bird", "animal", "goldfinch", "chirp" },
+                ["animal"] = new[] { "ambience", "bird", "chirp", "bark", "frog" },
+
+                ["creek"] = new[] { "ambience", "stream", "bridge", "woods", "water" },
+                ["stream"] = new[] { "ambience", "creek", "water", "river", "flowing" },
+                ["water"] = new[] { "liquid", "creek", "stream", "river", "ambience" },
+                ["river"] = new[] { "liquid", "water", "flowing", "creek" },
+                ["ocean"] = new[] { "ambience", "shore", "sea", "waves" },
+                ["shore"] = new[] { "ambience", "ocean", "sea" },
+                ["splash"] = new[] { "liquid", "water", "splashing", "hands" },
+                ["liquid"] = new[] { "water", "splash", "pour", "creek" },
+
+                ["children"] = new[] { "ambience", "group", "playground", "distant", "sprinkler" },
+                ["playground"] = new[] { "ambience", "children", "group", "distant" },
+                ["group"] = new[] { "ambience", "children", "playground" },
+                ["sprinkler"] = new[] { "ambience", "children", "sprinkler" },
+
+                ["nature"] = new[] { "ambience", "trail", "field", "windy", "wilderness", "swamp" },
+                ["trail"] = new[] { "ambience", "nature", "trail" },
+                ["wilderness"] = new[] { "ambience", "wilderness", "nature" },
+                ["forest"] = new[] { "ambience", "nature", "trail", "woods", "creek" },
+                ["woods"] = new[] { "ambience", "creek", "dirt", "road", "nature" },
+                ["dirt"] = new[] { "ambience", "road", "woods", "dirt" },
+
+                ["backyard"] = new[] { "ambience", "backyard", "road" },
+                ["park"] = new[] { "ambience", "backyard", "children", "group" },
+                ["garden"] = new[] { "ambience", "backyard", "nature" },
+
+                ["downtown"] = new[] { "ambience", "downtown", "area", "city" },
+                ["city"] = new[] { "ambience", "downtown", "road", "traffic" },
+                ["urban"] = new[] { "ambience", "downtown", "traffic" },
+
+                ["rain"] = new[] { "weather", "ambience", "drips", "drizzle", "light" },
+                ["drizzle"] = new[] { "weather", "ambience", "rain", "drips" },
+                ["drips"] = new[] { "weather", "ambience", "rain" },
+
+                ["thunder"] = new[] { "weather", "ambience", "thunderstorm", "heavy", "rain" },
+                ["storm"] = new[] { "weather", "ambience", "heavy", "rain", "thunder" },
+                ["thunderstorm"] = new[] { "weather", "ambience", "thunder", "heavy" },
+
+                ["wind"] = new[] { "weather", "ambience", "hurricane", "windy", "field" },
+                ["windy"] = new[] { "ambience", "nature", "field", "windy" },
+                ["breeze"] = new[] { "ambience", "nature", "field", "windy" },
+                ["hurricane"] = new[] { "weather", "ambience", "hurricane", "wind", "gusts" },
+
+                ["snow"] = new[] { "weather", "snow", "boots", "footstep", "jumping" },
+                ["winter"] = new[] { "weather", "snow", "boots", "blizzard" },
+                ["boots"] = new[] { "weather", "snow", "boots", "jumping" },
+                ["blizzard"] = new[] { "weather", "ambience", "wind", "blizzard", "snow" },
+                ["jumping"] = new[] { "weather", "snow", "boots", "jumping" },
+                ["footstep"] = new[] { "weather", "snow", "footstep", "single" },
+
+                ["night"] = new[] { "ambience", "night", "crickets", "bullfrog" },
+                ["crickets"] = new[] { "ambience", "night", "crickets", "animal" },
+                ["bullfrog"] = new[] { "ambience", "night", "bullfrog" },
+
+                ["cricket"] = new[] { "animal", "ambience", "crickets", "stream" },
+                ["insects"] = new[] { "animal", "ambience", "crickets", "jungle" },
+                ["summer"] = new[] { "animal", "ambience", "crickets" },
+
+                ["jungle"] = new[] { "animal", "ambience", "jungle", "rain", "forest", "insects" },
+                ["tropical"] = new[] { "animal", "ambience", "jungle", "insects" },
+
+                ["dog"] = new[] { "animal", "dog", "bark", "labrador", "maltese" },
+                ["bark"] = new[] { "animal", "dog", "bark" },
+                ["puppy"] = new[] { "animal", "dog", "bark" },
+
+                ["horse"] = new[] { "animal", "horse", "canters", "gravel", "trots" },
+                ["canters"] = new[] { "animal", "horse", "canters" },
+                ["hooves"] = new[] { "animal", "horse", "canters", "trot" },
+
+                ["cat"] = new[] { "animal", "mammal", "carnivore", "domestic", "meow" },
+                ["meow"] = new[] { "animal", "mammal", "cat", "domestic", "meow" },
+                ["domestic"] = new[] { "animal", "mammal", "cat", "domestic" },
+
+                ["frog"] = new[] { "animal", "frog", "chirp", "california", "tree" },
+                ["quack"] = new[] { "animal", "frog", "toad", "spadefoot" },
+
+                ["outdoor"] = new[] { "ambience", "nature", "children", "backyard", "trail" },
+                ["outside"] = new[] { "ambience", "nature", "backyard", "outdoor" },
+                ["morning"] = new[] { "animal", "bird", "chirp", "ambience", "nature" },
+                ["spring"] = new[] { "animal", "bird", "chirp" },
+                ["gentle"] = new[] { "ambience", "nature", "trail", "bird" },
+                ["quiet"] = new[] { "ambience", "nature", "trail" },
+                ["calm"] = new[] { "ambience", "nature", "trail", "bird" },
+            };
+
+            var expandedTags = new HashSet<string>(queryTags, StringComparer.OrdinalIgnoreCase);
+            foreach (string tag in queryTags.ToList())
+            {
+                if (synonymMap.TryGetValue(tag, out string[] syns))
+                    foreach (string s in syns) expandedTags.Add(s);
+            }
+
+            Dictionary<string, List<string>> filteredIndex = _soundIndex;
+            if (isOutdoorContext && outdoorBlacklistTags.Count > 0)
+            {
+                filteredIndex = new Dictionary<string, List<string>>(_soundIndex.Count, StringComparer.OrdinalIgnoreCase);
+                foreach (var (file, tags) in _soundIndex)
+                {
+                    string fileName = Path.GetFileNameWithoutExtension(file).ToLower();
+                    bool isBlacklisted = outdoorBlacklistTags.Any(bt =>
+                        fileName.Contains(bt.ToLower()));
+                    if (!isBlacklisted)
+                        filteredIndex[file] = tags;
+                }
+                LogToMainWindow($"🔊 Outdoor filter aktivan: {filteredIndex.Count}/{_soundIndex.Count} fajlova u pretrazi");
+            }
+
+            string found = FindBestMatch(filteredIndex, expandedTags);
+
+            if (found == null && filteredIndex.Count < _soundIndex.Count)
+            {
+                LogToMainWindow($"⚠️ Blacklist filter nije dao rezultat — pokušavam full indeks");
+                found = FindBestMatch(_soundIndex, expandedTags);
+            }
+
+            if (found != null)
+            {
+                string ext = Path.GetExtension(found);
+                string outputPath = Path.Combine(tempDir, $"ambient_{Guid.NewGuid().ToString().Substring(0, 8)}{ext}");
+                await Task.Run(() => File.Copy(found, outputPath, true));
+                LogToMainWindow($"🔊 Lokalni zvuk: '{Path.GetFileName(found)}' za '{soundType}'");
+                return outputPath;
+            }
+
+            LogToMainWindow($"🔊 Nema lokalnog zvuka za '{soundType}' u Assets/Sounds/");
             return null;
         }
+
+        private async Task<string> GetLocalSFX(string sfxType, string tempDir)
+        {
+            string sfxDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "SFX");
+
+            lock (_soundIndexLock)
+            {
+                if (_sfxIndex == null)
+                {
+                    _sfxIndex = BuildSoundIndex(sfxDir);
+                    if (_sfxIndex.Count > 0)
+                        LogToMainWindow($"🎵 SFX indeks: {_sfxIndex.Count} fajlova u Assets/SFX/");
+                }
+            }
+
+            if (_sfxIndex == null || _sfxIndex.Count == 0) return null;
+
+            var queryTags = sfxType.ToLower()
+                .Split(new[] { ' ', '_', '-' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(t => t.Length > 1)
+                .ToList();
+
+            string found = FindBestMatch(_sfxIndex, queryTags);
+            if (found == null) return null;
+
+            string ext = Path.GetExtension(found);
+            string outputPath = Path.Combine(tempDir, $"sfx_{Guid.NewGuid().ToString().Substring(0, 8)}{ext}");
+            await Task.Run(() => File.Copy(found, outputPath, true));
+            LogToMainWindow($"🎵 SFX: '{Path.GetFileName(found)}' za '{sfxType}'");
+            return outputPath;
+        }
+
+        public static string GetSoundLibraryReport()
+        {
+            var sb = new System.Text.StringBuilder();
+            string soundsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Sounds");
+            string sfxDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "SFX");
+
+            var allDirs = new[] { ("Sounds", soundsDir), ("SFX", sfxDir) };
+            foreach (var (label, dir) in allDirs)
+            {
+                if (!Directory.Exists(dir)) continue;
+                var idx = BuildSoundIndex(dir);
+                sb.AppendLine($"\n═══ {label} ({idx.Count} fajlova) ═══");
+                foreach (var (file, tags) in idx.OrderBy(x => Path.GetFileName(x.Key)))
+                    sb.AppendLine($"  {Path.GetFileName(file)}\n    Tagovi: {string.Join(", ", tags.Distinct().Take(8))}");
+            }
+            return sb.ToString();
+        }
+
         private async Task<string> MixAmbientWithMusic(string musicPath, List<StoryScene> scenes, double totalDuration, string tempDir)
         {
             if (!_enableAmbientSounds || scenes.All(s => string.IsNullOrEmpty(s.AmbientPath)))
@@ -2338,18 +2879,21 @@ Odgovori ISKLJUČIVO JSON:
 
             double ambientVolume = _detectedContext switch
             {
-                "lullaby" => 0.08,
-                "sad" => 0.10,
-                "party" => 0.20,
-                "dance" => 0.20,
-                "adventure" => 0.18,
-                "christmas" => 0.16,
-                "love" => 0.12,
-                "nature" => 0.14,
-                _ => 0.15
+                "lullaby" => 0.12,
+                "sad" => 0.13,
+                "love" => 0.15,
+                "nature" => 0.18,
+                "outdoor" => 0.18,
+                "health" => 0.18,
+                "adventure" => 0.20,
+                "christmas" => 0.20,
+                "party" => 0.25,
+                "dance" => 0.25,
+                "fun" => 0.20,
+                _ => 0.18
             };
 
-            LogToMainWindow($"🔊 Miksiram ambijentalne zvukove sa muzikom ({scenes.Count(s => !string.IsNullOrEmpty(s.AmbientPath))} zvukova, volumen={ambientVolume:F2})");
+            LogToMainWindow($"🔊 Miksiram ambijentalne zvukove: {scenes.Count(s => !string.IsNullOrEmpty(s.AmbientPath))} zvukova, gain={ambientVolume:F2}");
 
             var filterParts = new List<string>();
             var inputs = new List<string>();
@@ -2357,31 +2901,34 @@ Odgovori ISKLJUČIVO JSON:
             inputs.Add($"-i \"{musicPath}\"");
             filterParts.Add($"[0:a]volume=1.0[a0]");
 
+            const double crossfadeDuration = 1.0;
             int ambientIndex = 1;
+
             for (int i = 0; i < scenes.Count; i++)
             {
                 if (!string.IsNullOrEmpty(scenes[i].AmbientPath) && File.Exists(scenes[i].AmbientPath))
                 {
                     inputs.Add($"-i \"{scenes[i].AmbientPath}\"");
-                    double startTime = scenes[i].StartTime;
-                    double duration  = scenes[i].Duration;
-                    string startMs   = ((long)(startTime * 1000)).ToString();
-                    double endTime   = startTime + duration;
+                    double startTime = _timelineCursorOffset + scenes[i].StartTime;
+                    double duration = scenes[i].Duration;
+                    string startMs = ((long)(startTime * 1000)).ToString();
+                    double endTime = startTime + duration;
 
-                    // ISPRAVAN REDOSLED:
-                    // 1. aloop — loopuj kratki zvuk da popuni cijelu scenu
-                    // 2. adelay — pomjeri na tačnu poziciju u timeline-u
-                    // 3. atrim=end — odsijeci na kraj scene (apsolutno vrijeme)
-                    // 4. volume — primijeni glasnoću
+                    bool hasPrevAmbient = i > 0 && !string.IsNullOrEmpty(scenes[i - 1].AmbientPath);
+                    double fadeInDuration = hasPrevAmbient ? crossfadeDuration : 0.3;
+                    double fadeOutDuration = 0.5;
+
                     filterParts.Add(
                         $"[{ambientIndex}:a]" +
                         $"aloop=loop=-1:size=2e+09," +
                         $"adelay={startMs}|{startMs}," +
                         $"atrim=end={endTime.ToString("F3", CultureInfo.InvariantCulture)}," +
-                        $"volume={ambientVolume.ToString("F2", CultureInfo.InvariantCulture)}" +
-                        $"[a{ambientIndex}]");
+                        $"afade=t=in:st={startTime.ToString("F3", CultureInfo.InvariantCulture)}:d={fadeInDuration.ToString("F2", CultureInfo.InvariantCulture)}," +
+                        $"afade=t=out:st={(endTime - fadeOutDuration).ToString("F3", CultureInfo.InvariantCulture)}:d={fadeOutDuration.ToString("F2", CultureInfo.InvariantCulture)}," +
+                        $"volume={ambientVolume.ToString("F2", CultureInfo.InvariantCulture)}[a{ambientIndex}]");
+
                     ambientIndex++;
-                    LogToMainWindow($"🔊 Dodajem zvuk za scenu {i + 1}: start={startTime:F1}s, duration={duration:F1}s");
+                    LogToMainWindow($"🔊 Scena {i + 1}: ambient start={startTime:F1}s dur={duration:F1}s");
                 }
             }
 
@@ -2398,8 +2945,6 @@ Odgovori ISKLJUČIVO JSON:
             string mixFilter = string.Join("", mixInputs);
             string outputPath = Path.Combine(tempDir, $"mixed_audio_{Guid.NewGuid().ToString().Substring(0, 8)}.mp3");
 
-            // normalize=0 je KRITIČNO — bez toga amix dijeli svaki input s brojem inputa
-            // (20 inputa = svaki na 5% volumena, muzika postaje nečujna)
             string args = $"-nostdin {allInputs} -filter_complex \"{filterGraph};{mixFilter}amix=inputs={mixInputs.Count}:duration=first:normalize=0\" -t {totalDuration.ToString(CultureInfo.InvariantCulture)} -y \"{outputPath}\"";
 
             var process = new Process
@@ -2416,11 +2961,9 @@ Odgovori ISKLJUČIVO JSON:
             };
 
             process.Start();
-            // OBAVEZNO - bez ovoga FFmpeg deadlockuje na 90% kada stderr buffer postane pun
             process.BeginErrorReadLine();
             process.BeginOutputReadLine();
 
-            // Timeout 120s - ako ne završi, odustajemo (ne visi zauvijek)
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
             try
             {
@@ -2435,7 +2978,7 @@ Odgovori ISKLJUČIVO JSON:
 
             if (File.Exists(outputPath) && new FileInfo(outputPath).Length > 0)
             {
-                LogToMainWindow($"✅ Ambijentalni zvukovi uspješno miksnani");
+                LogToMainWindow($"✅ Ambijentalni zvukovi uspješno miksnani (gain={ambientVolume:F2}, crossfade=1s)");
                 return outputPath;
             }
 
@@ -2450,7 +2993,6 @@ Odgovori ISKLJUČIVO JSON:
         {
             if (!_enableTransitionSounds) return null;
 
-            // Ako već imamo taj tip u kešu, samo kopiraj
             if (_transitionSoundCache.TryGetValue(type, out string cachedSource) && File.Exists(cachedSource))
             {
                 string copyPath = Path.Combine(tempDir, $"transition_{type}_{Guid.NewGuid().ToString().Substring(0, 8)}.mp3");
@@ -2458,7 +3000,6 @@ Odgovori ISKLJUČIVO JSON:
                 return copyPath;
             }
 
-            // Pokušaj lokalni fajl prvo (Assets/Sounds/)
             string soundFile = type == "pop" ? "transition-pop.mp3" : "transition-whoosh.mp3";
             string localPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Sounds", soundFile);
             if (File.Exists(localPath))
@@ -2469,8 +3010,6 @@ Odgovori ISKLJUČIVO JSON:
                 return outputPath;
             }
 
-            // Generiši zvuk programski pomoću NAudio — bez FFmpeg, bez interneta
-            // Rezultat: profesionalan UI zvuk s pravim ADSR envelope-om
             try
             {
                 string genPath = Path.Combine(tempDir, $"transition_{type}_{Guid.NewGuid().ToString().Substring(0, 8)}.wav");
@@ -2495,16 +3034,10 @@ Odgovori ISKLJUČIVO JSON:
             return null;
         }
 
-        /// <summary>
-        /// Generiše suptilan UI "pop" zvuk pomoću NAudio.
-        /// Zvuk: kratki niskofrekventni klik s mekim ADSR envelope-om.
-        /// Namijenjen da bude jedva čujan ispod muzike — kao elegantna tranzicija.
-        /// </summary>
         private bool GeneratePopSound(string outputPath)
         {
             const int sampleRate = 44100;
             const int channels = 2;
-            // Ukupno trajanje: 180ms — dovoljno kratko da ne ometa muziku
             double totalSeconds = 0.18;
             int totalSamples = (int)(sampleRate * totalSeconds);
 
@@ -2514,38 +3047,28 @@ Odgovori ISKLJUČIVO JSON:
             for (int i = 0; i < totalSamples; i++)
             {
                 double t = (double)i / sampleRate;
-                double tNorm = t / totalSeconds; // 0..1
+                double tNorm = t / totalSeconds;
 
-                // Envelope: brzi attack (0-5ms), eksponencijalni decay (5-180ms)
-                // Rezultat: kratki klik koji se odmah gasi, ne "bip" koji zvoni
                 double envelope;
                 if (t < 0.005)
-                    envelope = t / 0.005; // Attack: 0→1 za 5ms
+                    envelope = t / 0.005;
                 else
-                    envelope = Math.Exp(-18.0 * (t - 0.005)); // Decay: eksponencijalni pad
+                    envelope = Math.Exp(-18.0 * (t - 0.005));
 
-                // Zvuk: niskofrekventni bump (80Hz osnova) + kratki šum za "klik" teksturu
-                // 80Hz daje "mekoću", šum daje "realnost" zvuka
                 double fundamental = Math.Sin(2 * Math.PI * 80 * t) * 0.6;
-                double harmonic    = Math.Sin(2 * Math.PI * 160 * t) * 0.25;
-                double click       = (rng.NextDouble() * 2 - 1) * Math.Exp(-120 * t) * 0.3;
+                double harmonic = Math.Sin(2 * Math.PI * 160 * t) * 0.25;
+                double click = (rng.NextDouble() * 2 - 1) * Math.Exp(-120 * t) * 0.3;
 
-                // Ukupan signal s envelope-om, skaliran na tiho (0.15 amplitude)
-                // Tiho je namjerno — pop treba biti suptilan, ne agresivan
                 double signal = (fundamental + harmonic + click) * envelope * 0.15;
 
                 float sample = (float)Math.Clamp(signal, -1.0, 1.0);
-                samples[i * channels]     = sample; // L
-                samples[i * channels + 1] = sample; // R
+                samples[i * channels] = sample;
+                samples[i * channels + 1] = sample;
             }
 
             return WriteWav(outputPath, samples, sampleRate, channels);
         }
 
-        /// <summary>
-        /// Generiše suptilan "whoosh" zvuk (šuštanje zraka) pomoću NAudio.
-        /// Zvuk: filtrirani bijeli šum s fade-in/fade-out, 450ms.
-        /// </summary>
         private bool GenerateWhooshSound(string outputPath)
         {
             const int sampleRate = 44100;
@@ -2556,16 +3079,14 @@ Odgovori ISKLJUČIVO JSON:
             var samples = new float[totalSamples * channels];
             var rng = new Random(42);
 
-            // Jednostavan IIR lowpass filter za "šuštanje" (ne oštar šum)
             double filterState = 0;
-            const double filterCoeff = 0.12; // Propušta ~500Hz i ispod
+            const double filterCoeff = 0.12;
 
             for (int i = 0; i < totalSamples; i++)
             {
                 double t = (double)i / sampleRate;
                 double tNorm = t / totalSeconds;
 
-                // Envelope: blagi fade-in (0-80ms), pik na 40%, blagi fade-out (60-100%)
                 double envelope;
                 if (tNorm < 0.18)
                     envelope = tNorm / 0.18;
@@ -2574,22 +3095,19 @@ Odgovori ISKLJUČIVO JSON:
                 else
                     envelope = 1.0 - (tNorm - 0.60) / 0.40;
 
-                // Filtrirani bijeli šum → mekši whoosh
                 double noise = rng.NextDouble() * 2 - 1;
                 filterState = filterState * (1 - filterCoeff) + noise * filterCoeff;
 
-                // Suptilno: 0.12 amplitude — jedva čujno ispod muzike
                 double signal = filterState * envelope * 0.12;
 
                 float sample = (float)Math.Clamp(signal, -1.0, 1.0);
-                samples[i * channels]     = sample;
+                samples[i * channels] = sample;
                 samples[i * channels + 1] = sample;
             }
 
             return WriteWav(outputPath, samples, sampleRate, channels);
         }
 
-        /// <summary>Piše float[] samples u WAV fajl bez eksternih zavisnosti.</summary>
         private bool WriteWav(string path, float[] samples, int sampleRate, int channels)
         {
             try
@@ -2613,8 +3131,11 @@ Odgovori ISKLJUČIVO JSON:
 
         private async Task ProcessVideoCreation(string audioPath, double totalDuration)
         {
+            _audioPath = audioPath;
+            _totalDuration = totalDuration;
+
             btnGenerate.Content = "🎬 AI kreira priču...";
-            AnnounceToUser("AI analizira pjesmu i kreira priču...", 5);
+            AnnounceToUser(L("ai_analyzing_song_story"), 5);
 
             var storyBoard = await GenerateStoryBoard(_lyricLines, _cts?.Token ?? CancellationToken.None);
 
@@ -2628,29 +3149,53 @@ Odgovori ISKLJUČIVO JSON:
             LogToMainWindow($"👤 Glavni lik: {storyBoard.MainCharacter}");
             LogToMainWindow($"🎬 Tema: {storyBoard.OverallTheme}");
 
+            string ffmpegForBeat = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
+            _beatInfo = await BeatDetection.AnalyzeAudio(audioPath, ffmpegForBeat, _cts?.Token ?? CancellationToken.None);
+            if (_beatInfo.IsValid)
+                LogToMainWindow($"🥁 Beat detection: {_beatInfo.BPM:F0} BPM, {_beatInfo.BeatTimes.Count} udaraca, confidence={_beatInfo.Confidence:F2}");
+            else
+                LogToMainWindow("🥁 Beat detection: nije pronađen ritam, koristim Whisper trajanja");
+
+            bool visionOk = await VisionAnalyzer.InitializeAsync(LogToMainWindow, _cts?.Token ?? CancellationToken.None);
+            LogToMainWindow(visionOk ? "🧠 VisionAnalyzer: ONNX aktivan" : "🧠 VisionAnalyzer: FFmpeg mod");
+
+            MotionAnalyzer.ClearCache();
+            _lastClipMotion = null;
+
             _tempVideoFolder = Path.Combine(Path.GetTempPath(), $"UVE_Story_{Guid.NewGuid()}");
             Directory.CreateDirectory(_tempVideoFolder);
 
             _segments = new List<TimelineSegment>();
 
-            // Resetuj deduplication keševe — svaka nova sesija generisanja počinje čisto
             _usedMediaUrls.Clear();
             _queryUseCount.Clear();
 
-            // ========== LOGIKA ZA INSTRUMENTALNE DIJELOVE (B-roll) ==========
             int sceneCount = storyBoard.Scenes.Count;
             double estimatedSegDur = sceneCount > 0
                 ? Math.Round(totalDuration / sceneCount, 2)
                 : 0;
-            double lyricsTotalDuration = sceneCount > 0
-                ? Math.Round(estimatedSegDur * sceneCount, 2)
-                : 0;
-            double remainingDuration = totalDuration - lyricsTotalDuration;
-            double originalTotalDuration = totalDuration;
 
-            // Inicijalizuj StartTime i Duration za sve scene OVDE —
-            // pre B-roll logike koja pomera StartTime sa += shift.
-            // Whisper timestamp-ovi imaju prioritet ako postoje.
+            double MAX_LYRIC_SCENE_DURATION;
+            if (_beatInfo != null && _beatInfo.IsValid)
+            {
+                if (_beatInfo.BPM > 120) MAX_LYRIC_SCENE_DURATION = 6.0;
+                else if (_beatInfo.BPM > 80) MAX_LYRIC_SCENE_DURATION = 9.0;
+                else MAX_LYRIC_SCENE_DURATION = 12.0;
+                LogToMainWindow($"🥁 BPM {_beatInfo.BPM:F0} → max trajanje scene: {MAX_LYRIC_SCENE_DURATION}s");
+            }
+            else
+            {
+                MAX_LYRIC_SCENE_DURATION = _detectedContext switch
+                {
+                    "children" or "lullaby" or "fun" or "party" => 9.0,
+                    "wedding" or "love" or "romantic" => 12.0,
+                    "adventure" or "sport" or "action" => 6.0,
+                    "sad" or "melancholy" or "documentary" => 15.0,
+                    _ => 9.0
+                };
+                LogToMainWindow($"🎬 Context '{_detectedContext}' → max trajanje scene: {MAX_LYRIC_SCENE_DURATION}s");
+            }
+
             for (int si = 0; si < storyBoard.Scenes.Count; si++)
             {
                 var sc = storyBoard.Scenes[si];
@@ -2659,24 +3204,71 @@ Odgovori ISKLJUČIVO JSON:
                     sc.StartTime = _lyricTimestamps[si];
                     double nxt = _lyricTimestamps.ContainsKey(si + 1)
                         ? _lyricTimestamps[si + 1]
-                        : totalDuration;
-                    sc.Duration = Math.Max(1.0, Math.Round(nxt - sc.StartTime, 2));
+                        : sc.StartTime + MAX_LYRIC_SCENE_DURATION;
+                    double rawDur = Math.Max(1.0, Math.Round(nxt - sc.StartTime, 2));
+                    sc.Duration = Math.Min(MAX_LYRIC_SCENE_DURATION, rawDur);
+
+                    if (_beatInfo != null && _beatInfo.IsValid && _beatInfo.BeatTimes?.Count > 4)
+                    {
+                        double snapRadius = 0.150;
+                        double nearest = _beatInfo.BeatTimes
+                            .OrderBy(b => Math.Abs(b - sc.StartTime))
+                            .FirstOrDefault();
+                        double diff = Math.Abs(nearest - sc.StartTime);
+                        if (diff > 0.02 && diff <= snapRadius)
+                        {
+                            sc.StartTime = Math.Round(nearest, 3);
+                            if (_lyricTimestamps.ContainsKey(si + 1))
+                            {
+                                double maxDur = _lyricTimestamps[si + 1] - sc.StartTime;
+                                sc.Duration = Math.Min(sc.Duration, Math.Max(1.0, maxDur));
+                            }
+                        }
+                    }
                 }
                 else
                 {
                     sc.StartTime = Math.Round(si * estimatedSegDur, 2);
                     sc.Duration = (si == storyBoard.Scenes.Count - 1)
-                        ? Math.Max(1.0, Math.Round(totalDuration - sc.StartTime, 2))
+                        ? Math.Min(MAX_LYRIC_SCENE_DURATION,
+                            Math.Max(1.0, Math.Round(totalDuration - sc.StartTime, 2)))
                         : Math.Round(estimatedSegDur, 2);
                 }
             }
 
-            // Instrumentalni dio postoji samo ako je značajan (>5% trajanja)
-            if (remainingDuration > totalDuration * 0.05 && remainingDuration > 2.0)
+            double actualLyricsEnd;
+            if (_lyricTimestamps.Count > 0 && storyBoard.Scenes.Count > 0)
+            {
+                var lastScene = storyBoard.Scenes[storyBoard.Scenes.Count - 1];
+                int lastIdx = storyBoard.Scenes.Count - 1;
+                if (_lyricTimestamps.ContainsKey(lastIdx))
+                {
+                    double lastStart = _lyricTimestamps[lastIdx];
+                    double lastEnd = _lyricTimestamps.ContainsKey(lastIdx + 1)
+                        ? _lyricTimestamps[lastIdx + 1]
+                        : lastScene.StartTime + lastScene.Duration;
+                    actualLyricsEnd = lastEnd;
+                }
+                else
+                {
+                    actualLyricsEnd = lastScene.StartTime + lastScene.Duration;
+                }
+            }
+            else
+            {
+                double cappedSegDur = Math.Min(estimatedSegDur, MAX_LYRIC_SCENE_DURATION);
+                actualLyricsEnd = cappedSegDur * sceneCount;
+            }
+
+            double lyricsTotalDuration = Math.Round(actualLyricsEnd, 2);
+            double remainingDuration = Math.Round(totalDuration - lyricsTotalDuration, 2);
+
+            LogToMainWindow($"📊 Trajanje audio: {FormatTime(totalDuration)} | Stihovi: {FormatTime(lyricsTotalDuration)} | Instrumentalni rep: {FormatTime(Math.Max(0, remainingDuration))}");
+
+            if (remainingDuration > 1.5)
             {
                 LogToMainWindow($"🎵 Detektovan instrumentalni dio: {FormatTime(remainingDuration)} (ukupno trajanje: {FormatTime(totalDuration)}, stihovi: {FormatTime(lyricsTotalDuration)})");
 
-                // B-roll keywords za instrumentalne dijelove, prilagođeni kontekstu pjesme
                 List<string> bRollKeywords = new List<string>();
 
                 switch (_detectedContext)
@@ -2728,8 +3320,8 @@ Odgovori ISKLJUČIVO JSON:
                     case "dance":
                         bRollKeywords.AddRange(new[] {
                             "colorful abstract dance background movement",
-                            "children moving joyful silhouette dancing",
-                            "party lights animation colorful rhythm",
+                            "children dancing joyful colorful clothes spinning",
+                            "children dancing party colorful balloons happy",
                             "happy kids dancing background energetic",
                             "dance floor colorful lights movement",
                             "spinning colorful skirts dancing joyful",
@@ -2780,21 +3372,23 @@ Odgovori ISKLJUČIVO JSON:
                             "autumn leaves falling park path golden colors",
                             "winter snow children playing cozy warm bokeh",
                             "rain puddles children boots splashing happy",
-                            "sunset children silhouette park golden hour",
+                            "children park golden hour sunset warm light",
                             "morning dew nature close-up cinematic beautiful",
                             "rainbow sky colorful nature children wonder",
                         });
                         break;
                     case "music":
-                        // Pesma o muzici — B-roll pokazuje instrumente, note, koncert
                         bRollKeywords.AddRange(new[] {
-                            "music notes colorful flying animation",
-                            "children playing instruments school music class",
-                            "concert stage lights music performance",
-                            "piano keyboard hands playing music close-up",
-                            "headphones music listening child happy",
-                            "musical notes staff sheet music close-up",
-                            "guitar strings strumming music close-up"
+                            "children singing choir joyful colorful",
+                            "child playing piano happy lesson",
+                            "kids dancing music classroom joyful",
+                            "children instruments school band music",
+                            "child headphones bedroom happy music listening",
+                            "children singing together choir joyful classroom",
+                            "girl boy guitar playing happy smiling",
+                            "children clapping hands singing together fun",
+                            "kids music class teacher colorful instruments",
+                            "child microphone singing stage joyful performance"
                         });
                         break;
                     case "school":
@@ -2815,12 +3409,10 @@ Odgovori ISKLJUČIVO JSON:
                             "kitten cat playing children home"
                         });
                         break;
-                    default: // fun / general — koristimo temu pesme ako postoji
-                        // Ako AI detektuje temu, koristimo je za B-roll
+                    default:
                         if (!string.IsNullOrEmpty(storyBoard?.OverallTheme))
                         {
                             string themeLower = storyBoard.OverallTheme.ToLower();
-                            // Izvuci engleske ključne reči iz srpske teme
                             if (themeLower.Contains("muzik") || themeLower.Contains("pesm"))
                                 bRollKeywords.AddRange(new[] { "music concert children stage", "musical notes colorful animation", "children singing together group" });
                             else if (themeLower.Contains("prirod") || themeLower.Contains("šum"))
@@ -2828,7 +3420,6 @@ Odgovori ISKLJUČIVO JSON:
                             else if (themeLower.Contains("porodic") || themeLower.Contains("ljubav"))
                                 bRollKeywords.AddRange(new[] { "family together outdoor happy warm", "parents children hugging love", "home family cozy warm happy" });
                         }
-                        // Dodaj generičke ako lista ostane prazna
                         if (bRollKeywords.Count == 0)
                             bRollKeywords.AddRange(new[] {
                                 "children playing park nature sunny day cinematic",
@@ -2843,14 +3434,12 @@ Odgovori ISKLJUČIVO JSON:
                         break;
                 }
 
-                // Izračunaj koliko B-roll kadrova treba (svaki ~3-5 sekundi)
                 double bRollDurationPerClip = 4.0;
                 int bRollCount = Math.Max(1, (int)Math.Ceiling(remainingDuration / bRollDurationPerClip));
                 double actualDurationPerClip = remainingDuration / bRollCount;
 
                 LogToMainWindow($"🎬 Kreiranje {bRollCount} B-roll kadrova za instrumentalni dio (po {actualDurationPerClip:F1}s)");
 
-                // B-roll za UVOD (prije prve scene) - do 40% instrumentalnog dijela, max 10 sekundi
                 double introPortion = Math.Min(remainingDuration * 0.4, 10.0);
                 int introClips = Math.Max(1, (int)Math.Ceiling(introPortion / actualDurationPerClip));
                 double introClipDuration = introPortion / introClips;
@@ -2858,29 +3447,26 @@ Odgovori ISKLJUČIVO JSON:
                 double bRollStartTime = 0;
                 string bRollMediaType = (cmbMediaType.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "video";
 
-                // ---- Uvodni B-roll ----
-                // Lista privremenih segmenata za uvod — ubacujemo ih u _segments na kraju (Insert na poziciju 0 u obrnutom redosledu)
                 var introSegments = new List<TimelineSegment>();
                 for (int i = 0; i < introClips; i++)
                 {
                     string kw = bRollKeywords[i % bRollKeywords.Count];
                     string styleEnhance = _detectedContext switch
                     {
-                        "lullaby"   => "soft light peaceful calm",
-                        "party"     => "colorful joyful energetic",
-                        "sad"       => "gentle melancholy quiet",
+                        "lullaby" => "soft light peaceful calm",
+                        "party" => "colorful joyful energetic",
+                        "sad" => "gentle melancholy quiet",
                         "adventure" => "exciting dynamic outdoor",
-                        "dance"     => "rhythmic colorful movement",
+                        "dance" => "rhythmic colorful movement",
                         "christmas" => "warm cozy magical",
-                        "nature"    => "peaceful natural soft",
-                        _           => "warm colors happy cheerful"
+                        "nature" => "peaceful natural soft",
+                        _ => "warm colors happy cheerful"
                     };
                     string enhancedQuery = $"{kw} {styleEnhance}";
 
-                    AnnounceToUser($"B-roll uvod {i + 1}/{introClips}...", 5);
+                    AnnounceToUser(LF("b_roll_intro", i + 1, introClips), 5);
                     string bMediaPath = await SearchAndDownloadMedia(enhancedQuery, 1080, bRollMediaType, _cts?.Token ?? CancellationToken.None);
 
-                    // Ako nije pronađen — probaj sledeći keyword iz liste
                     if (string.IsNullOrEmpty(bMediaPath))
                     {
                         string altKw = bRollKeywords[(i + 1) % bRollKeywords.Count];
@@ -2908,40 +3494,42 @@ Odgovori ISKLJUČIVO JSON:
                     LogToMainWindow($"   B-roll uvod {i + 1}: {introClipDuration:F1}s - '{kw}' → {(string.IsNullOrEmpty(bMediaPath) ? "❌ nema medija" : "✅ OK")}");
                 }
 
-                // Ubaci uvod na početak _segments (u ispravnom redosledu)
                 for (int i = introSegments.Count - 1; i >= 0; i--)
                     _segments.Insert(0, introSegments[i]);
 
-                // Pomjeri sve scene storyboard-a za trajanje uvoda
-                double shift = introPortion;
+                double firstLyricTimestamp = _lyricTimestamps.Count > 0
+                    ? _lyricTimestamps[0]
+                    : 0.0;
+                double shift = introPortion - firstLyricTimestamp;
+                if (shift < 0) shift = 0;
+
                 foreach (var scene in storyBoard.Scenes)
                     scene.StartTime += shift;
 
-                // ---- Outro B-roll ----
                 double outroPortion = remainingDuration - introPortion;
                 if (outroPortion > 0.5)
                 {
                     int outroClips = Math.Max(1, (int)Math.Ceiling(outroPortion / actualDurationPerClip));
                     double outroClipDuration = outroPortion / outroClips;
-                    double outroStartTime = lyricsTotalDuration + introPortion;
+                    double outroStartTime = totalDuration - outroPortion;
 
                     for (int i = 0; i < outroClips; i++)
                     {
                         string kw = bRollKeywords[(introClips + i) % bRollKeywords.Count];
                         string styleEnhance = _detectedContext switch
                         {
-                            "lullaby"   => "soft light peaceful calm ending",
-                            "party"     => "colorful joyful fading out",
-                            "sad"       => "gentle melancholy quiet fade",
+                            "lullaby" => "soft light peaceful calm ending",
+                            "party" => "colorful joyful fading out",
+                            "sad" => "gentle melancholy quiet fade",
                             "adventure" => "exciting dynamic conclusion",
-                            "dance"     => "rhythmic colorful fade",
+                            "dance" => "rhythmic colorful fade",
                             "christmas" => "warm cozy magical ending",
-                            "nature"    => "peaceful natural soft conclusion",
-                            _           => "warm colors happy cheerful ending"
+                            "nature" => "peaceful natural soft conclusion",
+                            _ => "warm colors happy cheerful ending"
                         };
                         string enhancedQuery = $"{kw} {styleEnhance}";
 
-                        AnnounceToUser($"B-roll outro {i + 1}/{outroClips}...", 92);
+                        AnnounceToUser(LF("b_roll_outro", i + 1, outroClips), 92);
                         string bMediaPath = await SearchAndDownloadMedia(enhancedQuery, 1080, bRollMediaType, _cts?.Token ?? CancellationToken.None);
 
                         if (string.IsNullOrEmpty(bMediaPath))
@@ -2972,60 +3560,83 @@ Odgovori ISKLJUČIVO JSON:
                     }
                 }
 
-                // Resetuj ukupno trajanje za prikaz
                 totalDuration = introPortion + lyricsTotalDuration + outroPortion;
                 LogToMainWindow($"📊 Nakon dodavanja B-roll: uvod={introPortion:F1}s, stihovi={lyricsTotalDuration:F1}s, outro={outroPortion:F1}s, UKUPNO={totalDuration:F1}s");
             }
-            // ========== KRAJ B-roll LOGIKE ==========
 
             try
             {
                 string mediaType = (cmbMediaType.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "video";
                 int count = storyBoard.Scenes.Count;
-                // segDuration je sada izračunat u bloku pre B-roll logike (estimatedSegDur)
+
                 for (int i = 0; i < count; i++)
                 {
                     _cts?.Token.ThrowIfCancellationRequested();
                     var scene = storyBoard.Scenes[i];
 
-                    // StartTime i Duration su inicijalizovani pre B-roll logike (i pomak je primenjen tamo).
-                    // Ovde NEMA prepisivanja — koristimo vrednosti kakve jesu.
-
                     string styleConsistency = _detectedContext switch
                     {
-                        "lullaby" => "soft light cozy warm peaceful night",
-                        "party" => "colorful bright happy festive vibrant",
-                        "love" => "warm golden romantic soft glow",
+                        "lullaby" => "soft light cozy warm peaceful night children",
+                        "party" => "colorful bright happy festive vibrant children",
+                        "love" => "warm golden romantic soft glow family children",
                         "sad" => "grey moody soft desaturated melancholy",
-                        "adventure" => "outdoor bright natural energetic",
-                        "dance" => "colorful joyful movement bright",
-                        "christmas" => "warm holiday lights cozy festive",
-                        "animal" => "cute nature soft light warm",
-                        "school" => "bright colorful educational warm",
-                        "nature" => "natural sunlight green peaceful",
-                        _ => "warm colors soft light happy atmosphere child friendly"
+                        "adventure" => "outdoor bright natural energetic children",
+                        "dance" => "colorful joyful movement bright children",
+                        "christmas" => "warm holiday lights cozy festive children",
+                        "animal" => "cute nature soft light warm children",
+                        "school" => "bright colorful educational warm children",
+                        "nature" => "natural sunlight green peaceful children",
+                        "music" => "children joyful colorful bright fun",
+                        "outdoor" => "children park playground sunny green happy",
+                        "health" => "children running active park outdoor healthy sunny",
+                        _ => "children warm colors happy atmosphere soft light"
                     };
                     string energyBoost = scene.Energy >= 4 ? " action fast dynamic exciting" : scene.Energy <= 2 ? " calm peaceful slow gentle" : "";
                     string emotionBoost = scene.Emotion;
 
-                    // Gradimo čist engleski query — nikakav srpski/bosanski tekst ne sme da prođe
-                    string primaryQuery   = BuildLiteralSearchQuery(scene.Keywords, scene.Action, energyBoost, styleConsistency);
-                    string fallbackQuery  = BuildLiteralSearchQuery(scene.Keywords, "", "", "");
-                    string fallback2Query = BuildLiteralSearchQuery("", scene.Action, "", styleConsistency);
+                    string primaryQuery = BuildLiteralSearchQuery(scene.Keywords, scene.Action, energyBoost, styleConsistency);
+                    string fallbackQuery = BuildLiteralSearchQuery(scene.Keywords, "", "", "");
+
+                    string faceStyleQuery = _detectedContext switch
+                    {
+                        "outdoor" or "health" => "child face smiling laughing outdoor park happy",
+                        "music" => "child face singing smiling joyful happy",
+                        "dance" => "child face dancing smiling happy joyful",
+                        _ => "child face smiling happy closeup"
+                    };
+                    string fallback2Query = (i % 3 == 2)
+                        ? BuildLiteralSearchQuery(faceStyleQuery, "", "", styleConsistency)
+                        : BuildLiteralSearchQuery("", scene.Action, "", styleConsistency);
 
                     LogToMainWindow($"🎬 Scena {i + 1}: Energy={scene.Energy}, Action={scene.Action}, Duration={scene.Duration:F1}s");
                     LogToMainWindow($"   📝 Stih: '{(scene.Description.Length > 50 ? scene.Description.Substring(0, 50) + "..." : scene.Description)}'");
                     LogToMainWindow($"   🔑 Keywords: '{scene.Keywords}'");
                     LogToMainWindow($"   🔍 Pixabay query: '{primaryQuery}'");
 
-                    AnnounceToUser($"Scena {i + 1}/{count}: {scene.Description}...", 10 + (i * 70 / count));
+                    AnnounceToUser(LF("scene_progress", i + 1, count, scene.Description), 10 + (i * 70 / count));
 
                     string mediaPath = null;
 
-                    if (mediaType == "video" && scene.Duration > 8.0)
+                    var subSceneQueries = DetectSubSceneQueries(scene.Description, styleConsistency);
+                    if (subSceneQueries != null && subSceneQueries.Count >= 2 && mediaType == "video")
                     {
-                        // Scena je duga — preuzmi više kratkih klipova i spoji ih
-                        // Vizuelna raznolikost: 3×7s umesto 1×21s u loopu
+                        LogToMainWindow($"   🎬 Sub-scene detekcija: {subSceneQueries.Count} vizuelnih objekata → montaža klipova");
+                        mediaPath = await BuildSubSceneVideo(subSceneQueries, scene.Duration, _tempVideoFolder, _cts?.Token ?? CancellationToken.None);
+                        if (mediaPath != null)
+                            LogToMainWindow($"   ✅ Sub-scene video kreiran: {subSceneQueries.Count} klipa");
+                        else
+                            LogToMainWindow($"   ⚠ Sub-scene video nije uspio, koristim standardni path");
+                    }
+
+                    double effectiveDuration = Math.Min(scene.Duration, MAX_LYRIC_SCENE_DURATION);
+                    if (effectiveDuration != scene.Duration)
+                    {
+                        LogToMainWindow($"   ⚠️ Scena {i + 1}: Duration {scene.Duration:F1}s → ograničeno na {effectiveDuration:F1}s (MAX_LYRIC_SCENE_DURATION)");
+                        scene.Duration = effectiveDuration;
+                    }
+
+                    if (mediaType == "video" && scene.Duration > 6.0)
+                    {
                         mediaPath = await SearchAndDownloadMultipleMedia(
                             primaryQuery, fallbackQuery, mediaType,
                             scene.Duration, _tempVideoFolder, _cts?.Token ?? CancellationToken.None);
@@ -3044,7 +3655,6 @@ Odgovori ISKLJUČIVO JSON:
                         mediaPath = await SearchAndDownloadMedia(fallback, 1080, mediaType, _cts?.Token ?? CancellationToken.None, scene.Duration);
                     }
 
-                    // Poslednji fallback — color gradient slika u boji prema mood-u (nikad prazna scena)
                     if (string.IsNullOrEmpty(mediaPath))
                     {
                         mediaPath = await GenerateMoodGradient(scene.Emotion ?? _detectedMood, scene.Duration, _tempVideoFolder);
@@ -3061,26 +3671,27 @@ Odgovori ISKLJUČIVO JSON:
 
                             if (videoDuration > scene.Duration + 0.5)
                             {
-                                // Video je duži — odseci višak (brzo, bez re-encode)
                                 finalPath = await TrimVideoToDuration(mediaPath, scene.Duration, _tempVideoFolder);
                             }
                             else if (videoDuration < scene.Duration - 0.5)
                             {
-                                // Video je kraći — NE loopujemo ovde.
-                                // RenderEngine koristi -stream_loop -1 i sam loopuje pri renderu.
-                                // Samo logujemo razliku.
                                 LogToMainWindow($"   🔁 Kratak video ({videoDuration:F1}s < {scene.Duration:F1}s) — RenderEngine će loopovati");
-                                finalPath = mediaPath; // original, bez promene
+                                finalPath = mediaPath;
                             }
                         }
 
-                        // Ambijentalni zvukovi - SAMO Freesound (Pixabay uklonjen)
                         string ambientPath = await GetAmbientSoundPath(scene.AmbientSound, _tempVideoFolder, _cts?.Token ?? CancellationToken.None);
                         if (ambientPath != null)
                         {
                             scene.AmbientPath = ambientPath;
                             LogToMainWindow($"🔊 Ambijentalni zvuk za scenu {i + 1}: {scene.AmbientSound}");
                         }
+
+                        scene.VisionScore = _lastDownloadedVisionScore;
+                        scene.IsStaticClip = _lastDownloadedIsStatic;
+
+                        if (scene.IsStaticClip)
+                            LogToMainWindow($"   🎬 Statičan klip — Ken Burns će se primijeniti u renderu");
 
                         _segments.Add(new TimelineSegment
                         {
@@ -3092,8 +3703,9 @@ Odgovori ISKLJUČIVO JSON:
                             AmbientSoundPath = ambientPath,
                             Energy = scene.Energy,
                             Emotion = scene.Emotion,
-                            // mood:X|context:Y — RenderEngine koristi za color grading
-                            MoodTag = $"mood:{scene.Emotion ?? _detectedMood}|context:{_detectedContext}"
+                            MoodTag = $"mood:{scene.Emotion ?? _detectedMood}|context:{_detectedContext}",
+                            VisionScore = scene.VisionScore,
+                            IsStaticClip = scene.IsStaticClip
                         });
                         LogToMainWindow($"✅ Scena {i + 1}: medij preuzet");
                     }
@@ -3107,30 +3719,47 @@ Odgovori ISKLJUČIVO JSON:
 
                 if (_segments.Any(s => !string.IsNullOrEmpty(s.AmbientSoundPath)) && _enableAmbientSounds)
                 {
-                    AnnounceToUser("Miksiram ambijentalne zvukove sa muzikom...", 90);
-
                     for (int idx = 0; idx < storyBoard.Scenes.Count && idx < _segments.Count; idx++)
                     {
                         if (!string.IsNullOrEmpty(_segments[idx].AmbientSoundPath))
                             storyBoard.Scenes[idx].AmbientPath = _segments[idx].AmbientSoundPath;
                     }
+                    LogToMainWindow("🔊 Ambijentalni zvukovi pripremljeni — miksanje u toku sa video timeline-om...");
 
-                    _ambientAudioPath = await MixAmbientWithMusic(audioPath, storyBoard.Scenes, totalDuration, _tempVideoFolder);
                 }
 
-                // Funkcija 7: Preview lista pre rendera — JAWS accessible
-                // Loguje svaku scenu sa stihom i query-jem da korisnik može da provjeri
-                AnnounceToUser("Generisanje završeno. Pregledam scene...", 95);
+                if (_segments.Count >= 8)
+                {
+                    var lowQuality = _segments
+                        .Where(s => s.VisionScore < 5.5 && !string.IsNullOrEmpty(s.Path) && File.Exists(s.Path))
+                        .OrderBy(s => s.VisionScore)
+                        .Take(Math.Min(2, _segments.Count - 6))
+                        .ToList();
+
+                    foreach (var bad in lowQuality)
+                    {
+                        LogToMainWindow($"   🗑 Quality Gate: uklanjam scenu '{bad.Description}' (Score={bad.VisionScore:F1}/10)");
+                        _segments.Remove(bad);
+                    }
+
+                    if (lowQuality.Count > 0)
+                        LogToMainWindow($"✂️ Quality Gate: uklonjen(o) {lowQuality.Count} slab(ih) kadar(a) — ostalo {_segments.Count} scena");
+                }
+
+                AnnounceToUser(L("generation_done_reviewing"), 95);
                 LogToMainWindow("═══════════════════════════════════════");
                 LogToMainWindow($"📋 PREGLED SCENE — {_segments.Count} scena spremno");
                 LogToMainWindow("═══════════════════════════════════════");
+
+                const double DISPLAY_CURSOR = 4.0;
                 for (int si = 0; si < _segments.Count; si++)
                 {
                     var seg = _segments[si];
                     string hasMedia = string.IsNullOrEmpty(seg.Path) || !File.Exists(seg.Path)
                         ? "❌ NEMA MEDIJA" : "✅";
                     string lyric = !string.IsNullOrEmpty(seg.LyricText) ? $" | Stih: \"{seg.LyricText}\"" : "";
-                    LogToMainWindow($"  [{si + 1:D2}] {hasMedia} {FormatTime(seg.StartTime)}-{FormatTime(seg.StartTime + seg.Duration)} " +
+                    double displayStart = DISPLAY_CURSOR + seg.StartTime;
+                    LogToMainWindow($"  [{si + 1:D2}] {hasMedia} {FormatTime(displayStart)}-{FormatTime(displayStart + seg.Duration)} " +
                                    $"({seg.Duration:F1}s) — {seg.Description}{lyric}");
                 }
                 LogToMainWindow("═══════════════════════════════════════");
@@ -3141,17 +3770,142 @@ Odgovori ISKLJUČIVO JSON:
                 else
                     LogToMainWindow($"✅ Sve scene imaju medij. Pokrećem render...");
 
-                AnnounceToUser($"Pregled gotov. {_segments.Count} scena. Kreiram video.", 97);
+                GenerateValidationReport();
+
+                AnnounceToUser(LF("review_done_creating", _segments.Count), 97);
 
                 await CreateVideo(storyBoard);
             }
-            catch (Exception ex) { WpfMessageBox.Show($"Greška: {ex.Message}", "Greška", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { WpfMessageBox.Show(LF("generic_error", ex.Message), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Error); }
             finally { btnGenerate.IsEnabled = true; btnGenerate.Content = "🎬 KREIRAJ VIDEO"; }
         }
 
         #endregion
 
         #region TrimVideoToDuration
+
+        private void GenerateValidationReport()
+        {
+            var segs = _segments.Where(s => !string.IsNullOrEmpty(s.Path) && File.Exists(s.Path)).ToList();
+            if (segs.Count == 0) return;
+
+            int totalSegs = segs.Count;
+            double avgScore = segs.Average(s => s.VisionScore);
+            int staticCount = segs.Count(s => s.IsStaticClip);
+            int outdoorCount = segs.Count(s => s.Description != null && (
+                s.Description.Contains("park") || s.Description.Contains("outdoor") ||
+                s.Description.Contains("nature") || s.Description.Contains("street") ||
+                s.Description.Contains("playground") || s.Description.Contains("garden")));
+            int childrenCount = segs.Count(s => s.Description != null && (
+                s.Description.Contains("child") || s.Description.Contains("kid") ||
+                s.Description.Contains("family") || s.Description.Contains("deca") ||
+                s.Description.Contains("djeca") || s.Description.Contains("dete") ||
+                s.Description.Contains("baby")));
+            double totalDur = segs.Sum(s => s.Duration);
+            int highEnergy = segs.Count(s => s.Energy >= 4);
+            int lowEnergy = segs.Count(s => s.Energy <= 2);
+
+            LogToMainWindow("═══════════════════════════════════════");
+            LogToMainWindow("📊 VALIDATION REPORT — Automatska provjera kvaliteta");
+            LogToMainWindow("═══════════════════════════════════════");
+            LogToMainWindow($"  ✅ Ukupno scena: {totalSegs}");
+            LogToMainWindow($"  ⏱ Ukupno trajanje: {FormatTime(totalDur)}");
+            LogToMainWindow($"  ⭐ Prosječan Vision Score: {avgScore:F1}/10" +
+                            (avgScore >= 6.5 ? " — Dobar" : avgScore >= 5.0 ? " — Prihvatljiv" : " — ⚠ Slab"));
+            LogToMainWindow($"  🌿 Priroda/Outdoor kadrovi: {outdoorCount}/{totalSegs}" +
+                            (outdoorCount >= totalSegs / 2 ? " ✅" : " ⚠ Malo outdoor"));
+            LogToMainWindow($"  👧 Dječiji/Porodični kadrovi: {childrenCount}/{totalSegs}" +
+                            (childrenCount > 0 ? " ✅" : " ⚠ Nema djece na snimcima"));
+            LogToMainWindow($"  🎬 Statični kadrovi (Ken Burns primijenjen): {staticCount}/{totalSegs}");
+            LogToMainWindow($"  ⚡ Visoka energija (scena 4-5): {highEnergy} scena");
+            LogToMainWindow($"  🌊 Niska energija (scena 1-2): {lowEnergy} scena");
+
+            bool hasWarnings = false;
+            if (avgScore < 5.0)
+            { LogToMainWindow("  ⚠ UPOZORENJE: Prosječni score je nizak. Razmotri ponovnu generaciju."); hasWarnings = true; }
+            if (outdoorCount < totalSegs / 3)
+            { LogToMainWindow("  ⚠ UPOZORENJE: Malo outdoor scena — moguće indoor/mračni kadrovi."); hasWarnings = true; }
+            if (staticCount > totalSegs / 2)
+            { LogToMainWindow($"  ⚠ INFO: Više od polovine scena je statično ({staticCount}) — Ken Burns primijenjen na sve."); }
+
+            if (!hasWarnings)
+                LogToMainWindow("  🎉 Sve provjere prošle — video bi trebao biti bez 'gluposti'!");
+
+            LogToMainWindow($"  🎵 Kontekst: {_detectedContext} | Mood: {_detectedMood}");
+            LogToMainWindow("  📝 Opis: Snimci su pretežno " +
+                (outdoorCount > childrenCount ? "priroda i vanjski prostori" : "djeca i porodica") +
+                $", ukupno {FormatTime(totalDur)} materijala.");
+            LogToMainWindow("═══════════════════════════════════════");
+
+            AnnounceToUser($"Validation Report: {totalSegs} scena, prosječan score {avgScore:F1}, " +
+                $"{outdoorCount} outdoor, {childrenCount} dječijih kadrova.", 0);
+        }
+
+        private string _lastShotType = "";
+
+        private async Task<bool> CheckBrightnessAndTint(string videoPath, string ffmpegPath, CancellationToken ct)
+        {
+            if (!File.Exists(ffmpegPath) || !File.Exists(videoPath)) return true;
+
+            try
+            {
+                string args = $"-nostdin -i \"{videoPath}\" " +
+                              $"-vf \"select=eq(n\\,5),signalstats=stat=tout+brng\" " +
+                              $"-f null -";
+
+                var psi = new ProcessStartInfo(ffmpegPath, args)
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                };
+                using var proc = Process.Start(psi);
+                var soTask = proc.StandardOutput.ReadToEndAsync();
+                var seTask = proc.StandardError.ReadToEndAsync();
+                await Task.WhenAll(soTask, seTask);
+                await proc.WaitForExitAsync(ct);
+                string output = seTask.Result + soTask.Result;
+
+                var yavgMatch = System.Text.RegularExpressions.Regex.Match(output, @"YAVG:(\d+\.?\d*)");
+                if (yavgMatch.Success && double.TryParse(yavgMatch.Groups[1].Value,
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double yavg))
+                {
+                    if (yavg < 40)
+                    {
+                        LogToMainWindow($"   📊 Brightness {yavg:F0}/255 — previše tamno (min=40)");
+                        return false;
+                    }
+                    if (yavg > 235)
+                    {
+                        LogToMainWindow($"   📊 Brightness {yavg:F0}/255 — preekspozirano (max=235)");
+                        return false;
+                    }
+                }
+
+                var ravgMatch = System.Text.RegularExpressions.Regex.Match(output, @"RAVG:(\d+\.?\d*)");
+                var gavgMatch = System.Text.RegularExpressions.Regex.Match(output, @"GAVG:(\d+\.?\d*)");
+                if (ravgMatch.Success && gavgMatch.Success)
+                {
+                    double ravg = double.Parse(ravgMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    double gavg = double.Parse(gavgMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    double pinkDiff = ravg - gavg;
+
+                    if (pinkDiff > 18)
+                    {
+                        LogToMainWindow($"   📊 Tint R-G={pinkDiff:F1} — pink sadržaj (max=18)");
+                        return false;
+                    }
+                }
+
+                return true;
+            }
+            catch
+            {
+                return true;
+            }
+        }
 
         private async Task<string> TrimVideoToDuration(string inputPath, double targetDuration, string tempDir)
         {
@@ -3164,21 +3918,16 @@ Odgovori ISKLJUČIVO JSON:
                 string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
                 if (!File.Exists(ffmpegPath)) return inputPath;
 
-                // Izmeri stvarno trajanje ulaznog videa
                 double actualDuration = await GetVideoDuration(inputPath);
 
                 string args;
                 if (actualDuration >= targetDuration - 0.5)
                 {
-                    // Video je dovoljno dug — obični trim (brz, bez re-encode)
                     args = $"-ss 0 -i \"{inputPath}\" -t {targetDuration.ToString(CultureInfo.InvariantCulture)} -c copy -avoid_negative_ts make_zero -y \"{outputPath}\"";
                     LogToMainWindow($"   ✂ Trim: {actualDuration:F1}s → {targetDuration:F1}s");
                 }
                 else
                 {
-                    // Video je KRAĆI od potrebnog — NE loopujemo ovde, vraćamo original.
-                    // RenderEngine koristi -stream_loop -1 i sam loopuje brzo pri finalnom renderu,
-                    // bez re-encode koji bi trajao 30+ minuta za kratke klipove.
                     LogToMainWindow($"   🔁 Kratak video ({actualDuration:F1}s < {targetDuration:F1}s) — RenderEngine će loopovati");
                     return inputPath;
                 }
@@ -3187,12 +3936,18 @@ Odgovori ISKLJUČIVO JSON:
                 {
                     StartInfo = new ProcessStartInfo
                     {
-                        FileName = ffmpegPath, Arguments = args,
-                        CreateNoWindow = true, UseShellExecute = false,
-                        RedirectStandardError = true
+                        FileName = ffmpegPath,
+                        Arguments = args,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                        RedirectStandardOutput = true
                     }
                 };
                 process.Start();
+                var trimSo = process.StandardOutput.ReadToEndAsync();
+                var trimSe = process.StandardError.ReadToEndAsync();
+                await Task.WhenAll(trimSo, trimSe);
                 await process.WaitForExitAsync();
 
                 if (process.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length > 0)
@@ -3201,7 +3956,6 @@ Odgovori ISKLJUČIVO JSON:
                     return outputPath;
                 }
 
-                // Fallback — vrati original, RenderEngine će ga sam skratiti/loopovati
                 LogToMainWindow($"⚠️ Trim/Loop neuspješan — koristim original");
                 return inputPath;
             }
@@ -3221,14 +3975,27 @@ Odgovori ISKLJUČIVO JSON:
                 string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
                 if (!File.Exists(ffmpegPath)) return 5.0;
 
-                string args = $"-i \"{videoPath}\" -f null - 2>&1";
+                string args = $"-nostdin -i \"{videoPath}\" -f null -";
                 var process = new Process
                 {
-                    StartInfo = new ProcessStartInfo { FileName = ffmpegPath, Arguments = args, CreateNoWindow = true, UseShellExecute = false, RedirectStandardError = true }
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = ffmpegPath,
+                        Arguments = args,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardInput = true
+                    }
                 };
                 process.Start();
-                string output = await process.StandardError.ReadToEndAsync();
+                process.StandardInput.Close();
+                var _so1 = process.StandardOutput.ReadToEndAsync();
+                var _se1 = process.StandardError.ReadToEndAsync();
+                await Task.WhenAll(_so1, _se1);
                 await process.WaitForExitAsync();
+                string output = _se1.Result;
 
                 var match = System.Text.RegularExpressions.Regex.Match(output, @"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})");
                 if (match.Success)
@@ -3281,7 +4048,7 @@ Odgovori ISKLJUČIVO JSON:
                 await Dispatcher.InvokeAsync(() =>
                 {
                     var dlg = new ApiKeyDialog("Pixabay",
-                        "Pixabay API kljuc nije pronadjen.\n\nRegistruj se besplatno na pixabay.com/api,\npa unesi kljuc ovdje.");
+                        L("pixabay_key_not_found_msg"));
                     if (dlg.ShowDialog() == true && !string.IsNullOrEmpty(dlg.ApiKey))
                     {
                         newKey = dlg.ApiKey;
@@ -3301,7 +4068,7 @@ Odgovori ISKLJUČIVO JSON:
 
                 if (string.IsNullOrEmpty(apiKey))
                 {
-                    AnnounceToUser("Pixabay API kljuc nije unesen. Preuzimanje nije moguce.");
+                    AnnounceToUser(L("pixabay_key_not_entered"));
                     return null;
                 }
             }
@@ -3318,15 +4085,14 @@ Odgovori ISKLJUČIVO JSON:
                     {
                         ct.ThrowIfCancellationRequested();
                         string searchQ = attempt == 0 ? keywords : _universalKeywords[new Random().Next(_universalKeywords.Count)];
+
                         string url = mediaType == "video"
-                            // Pixabay duration kategorije: short(≤4s), medium(4-20s), long(20-60s)
-                            // Biramo kategoriju na osnovu potrebnog trajanja scene
                             ? (minDurationSeconds > 20
-                                ? $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=20&video_type=all&min_duration=20&max_duration=60"
+                                ? $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=30&video_type=film&min_duration=20&max_duration=60"
                                 : minDurationSeconds > 4
-                                    ? $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=20&video_type=all&min_duration=4&max_duration=60"
-                                    : $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=20&video_type=all")
-                            : $"https://pixabay.com/api/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&image_type=photo&safesearch=true&per_page=20&min_width={minWidth}";
+                                    ? $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=30&video_type=film&min_duration=4&max_duration=60"
+                                    : $"https://pixabay.com/api/videos/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&safesearch=true&per_page=30&video_type=film")
+                            : $"https://pixabay.com/api/?key={apiKey}&q={Uri.EscapeDataString(searchQ)}&image_type=photo&safesearch=true&per_page=30&min_width={minWidth}";
 
                         string response = await _httpClient.GetStringAsync(url, ct);
                         var json = JObject.Parse(response);
@@ -3336,24 +4102,28 @@ Odgovori ISKLJUČIVO JSON:
 
                         if (mediaType == "video")
                         {
-                            // Određujemo početni indeks na osnovu broja prethodnih upotreba ovog query-ja
-                            // — svaki sledeći poziv sa istim query-jem dobija sledeći hit iz liste
+                            var whitelistTags = new[] { "nature","park","family","kid","children","child",
+                                "smiling","bright","daytime","outdoor","sunshine","happy","playing",
+                                "playground","flowers","grass","blue sky" };
+                            var sortedHits = hits.Cast<JToken>().OrderByDescending(h => {
+                                string tags = h["tags"]?.ToString()?.ToLower() ?? "";
+                                return whitelistTags.Count(w => tags.Contains(w));
+                            }).ToList();
+
                             string queryKey = searchQ.ToLowerInvariant().Trim();
                             if (!_queryUseCount.ContainsKey(queryKey))
                                 _queryUseCount[queryKey] = 0;
 
-                            int startIdx = _queryUseCount[queryKey] % hits.Count;
+                            int startIdx = _queryUseCount[queryKey] % sortedHits.Count;
                             _queryUseCount[queryKey]++;
 
-                            // Prolazimo kroz hits počev od startIdx (kružno), preskačemo već korišćene URL-ove
-                            for (int hitOffset = 0; hitOffset < hits.Count; hitOffset++)
+                            for (int hitOffset = 0; hitOffset < sortedHits.Count; hitOffset++)
                             {
-                                int hitIdx = (startIdx + hitOffset) % hits.Count;
-                                var hit = hits[hitIdx];
+                                int hitIdx = (startIdx + hitOffset) % sortedHits.Count;
+                                var hit = sortedHits[hitIdx];
                                 var videos = hit["videos"] as JObject;
                                 if (videos == null) continue;
 
-                                // Pokušaj large, pa medium, pa small format
                                 string[] formats = { "large", "medium", "small" };
                                 foreach (var fmt in formats)
                                 {
@@ -3363,32 +4133,150 @@ Odgovori ISKLJUČIVO JSON:
                                     string dlUrl = videoObj["url"]?.ToString();
                                     if (string.IsNullOrEmpty(dlUrl)) continue;
 
-                                    // Preskočimo ako smo već koristili ovaj URL u ovoj sesiji generisanja
                                     if (_usedMediaUrls.Contains(dlUrl))
                                     {
                                         LogToMainWindow($"   ⏭ Preskačem već korišćeni video URL (hit {hitIdx + 1})");
                                         continue;
                                     }
 
-                                    // Označimo kao korišćen
+                                    string hitTags = hit["tags"]?.ToString()?.ToLower() ?? "";
+
+                                    var universalBadTags = new[] {
+                                        "corridor", "hallway", "lobby", "atrium", "marble",
+                                        "frog", "toad", "reptile", "snake", "spider",
+                                        "black and white", "monochrome", "silhouette",
+                                        "animation", "cartoon", "cartoons", "animated", "3d", "render", "rendered",
+                                        "illustration", "drawing", "painting", "sketch", "art",
+                                        "ai generated", "ai-generated", "generative", "abstract",
+                                        "background", "texture", "pattern", "graphics", "vector",
+                                        "fantasy", "surreal", "watercolor", "cg", "vfx", "particles"
+                                    };
+
+                                    string[] contextBadTags;
+                                    switch (_detectedContext)
+                                    {
+                                        case "children":
+                                        case "lullaby":
+                                        case "fun":
+                                        case "school":
+                                            contextBadTags = new[] {
+                                                "coffee", "tea cup", "beer", "wine", "whiskey", "alcohol",
+                                                "cigarette", "smoking", "office", "corporate", "business",
+                                                "meeting", "suit", "formal", "briefcase", "laptop work",
+                                                "nightclub", "bar", "pub", "casino", "violence",
+                                                "cemetery", "funeral", "weapon", "gun", "knife"
+                                            };
+                                            break;
+                                        case "wedding":
+                                        case "love":
+                                        case "romantic":
+                                            contextBadTags = new[] {
+                                                "violence", "weapon", "gun", "knife", "horror",
+                                                "cemetery", "funeral", "accident", "crash"
+                                            };
+                                            break;
+                                        case "adventure":
+                                        case "sport":
+                                            contextBadTags = new[] {
+                                                "hospital", "sick", "death", "violence", "gun",
+                                                "office", "corporate", "boring", "slow"
+                                            };
+                                            break;
+                                        default:
+                                            contextBadTags = new[] {
+                                                "violence", "weapon", "gun", "knife", "horror",
+                                                "cemetery", "funeral", "accident", "crash"
+                                            };
+                                            break;
+                                    }
+
+                                    bool hasBadTag = universalBadTags.Any(t => hitTags.Contains(t))
+                                                  || contextBadTags.Any(t => hitTags.Contains(t));
+                                    if (hasBadTag)
+                                    {
+                                        LogToMainWindow($"   ⏭ Preskačem neprikladan sadrzaj (tags: {hitTags.Substring(0, Math.Min(60, hitTags.Length))})");
+                                        continue;
+                                    }
+
                                     _usedMediaUrls.Add(dlUrl);
 
                                     string fileName = $"AI_{Guid.NewGuid().ToString().Substring(0, 8)}.mp4";
                                     string fullPath = Path.Combine(GetCurrentProjectFolder(), fileName);
 
-                                    LogToMainWindow($"   ⬇ Preuzimam video hit {hitIdx + 1}/{hits.Count} (format: {fmt}): {dlUrl.Substring(dlUrl.LastIndexOf('/') + 1)}");
-                                    byte[] data = await _httpClient.GetByteArrayAsync(dlUrl, ct);
-                                    await File.WriteAllBytesAsync(fullPath, data, ct);
+                                    LogToMainWindow($"   ⬇ Preuzimam video hit {hitIdx + 1}/{sortedHits.Count} (format: {fmt}): {dlUrl.Substring(dlUrl.LastIndexOf('/') + 1)}");
+                                    using var dlStream = await _dlHttpClient.GetStreamAsync(dlUrl, ct);
+                                    using var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                                    await dlStream.CopyToAsync(fileStream, ct);
+
+                                    string ffmpegForBright = System.IO.Path.Combine(
+                                        AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
+                                    var brightnessOk = await CheckBrightnessAndTint(fullPath, ffmpegForBright, ct);
+                                    if (!brightnessOk && hitOffset < sortedHits.Count - 2)
+                                    {
+                                        LogToMainWindow($"   ⏭ Odbačen zbog brightness/tint (previše tamno/svijetlo ili pink tint)");
+                                        try { File.Delete(fullPath); } catch { }
+                                        _usedMediaUrls.Remove(dlUrl);
+                                        continue;
+                                    }
+
+                                    string ffmpegForVision = System.IO.Path.Combine(
+                                        AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
+                                    var vision = await VisionAnalyzer.AnalyzeClipAsync(fullPath, ffmpegForVision, ct);
+
+                                    if (vision.Score < 4.0 && hitOffset < hits.Count - 2)
+                                    {
+                                        LogToMainWindow($"   ⚠ VisionScore {vision.Score:F1}/10 — odbacujem ({vision.RejectReason}), trazim bolji...");
+                                        try { File.Delete(fullPath); } catch { }
+                                        _usedMediaUrls.Remove(dlUrl);
+                                        break;
+                                    }
+
+                                    var clipMotion = await MotionAnalyzer.AnalyzeAsync(fullPath, ffmpegForVision, ct);
+                                    bool motionOk = MotionResult.IsCompatible(_lastClipMotion, clipMotion);
+
+                                    if (!motionOk && hitOffset < sortedHits.Count - 2)
+                                    {
+                                        LogToMainWindow("   Motion mismatch (" + (_lastClipMotion?.Direction.ToString() ?? "null") + " -> " + clipMotion.Direction + ") -- trazim bolji...");
+                                        try { File.Delete(fullPath); } catch { }
+                                        _usedMediaUrls.Remove(dlUrl);
+                                        break;
+                                    }
+
+                                    string hitTagsForShot = hit["tags"]?.ToString()?.ToLower() ?? "";
+                                    string shotType = "medium";
+                                    if (hitTagsForShot.Contains("aerial") || hitTagsForShot.Contains("drone") ||
+                                        hitTagsForShot.Contains("landscape") || hitTagsForShot.Contains("panorama") ||
+                                        hitTagsForShot.Contains("wide") || vision.IsOutdoor && !vision.HasChildren)
+                                        shotType = "wide";
+                                    else if (hitTagsForShot.Contains("close") || hitTagsForShot.Contains("portrait") ||
+                                             hitTagsForShot.Contains("face") || vision.HasChildren)
+                                        shotType = "close";
+
+                                    if (shotType == _lastShotType && _lastShotType != "" && hitOffset < sortedHits.Count - 2)
+                                    {
+                                        LogToMainWindow($"   🎬 Shot composition: dva uzastopna '{shotType}' — tražim drugi tip...");
+                                        try { File.Delete(fullPath); } catch { }
+                                        _usedMediaUrls.Remove(dlUrl);
+                                        continue;
+                                    }
+
+                                    _lastClipMotion = clipMotion;
+                                    _lastShotType = shotType;
+                                    string visionTag = vision.OnnxUsed ? $"ONNX:{vision.TopLabel}" : "FFmpeg";
+                                    LogToMainWindow($"   ✅ Score {vision.Score:F1}/10 [{visionTag}] | Motion:{clipMotion.Direction} | Shot:{shotType} | " +
+                                        $"Children:{vision.HasChildren} Outdoor:{vision.IsOutdoor}");
+
+                                    _lastDownloadedVisionScore = vision.Score;
+                                    _lastDownloadedIsStatic = clipMotion.Direction == MotionDirection.Unknown
+                                                              || clipMotion.Direction == MotionDirection.Static;
                                     return fullPath;
                                 }
                             }
 
-                            // Svi hitovi su već korišćeni — ako smo na attempt 0, nastavi na fallback
-                            LogToMainWindow($"   ⚠ Svi {hits.Count} video rezultati za '{searchQ.Substring(0, Math.Min(40, searchQ.Length))}' su već korišćeni");
+                            LogToMainWindow($"   ⚠ Svi {sortedHits.Count} video rezultati za '{searchQ.Substring(0, Math.Min(40, searchQ.Length))}' su već korišćeni");
                         }
                         else
                         {
-                            // Isti princip za slike — rotacija + deduplication
                             string queryKey = searchQ.ToLowerInvariant().Trim() + "_img";
                             if (!_queryUseCount.ContainsKey(queryKey))
                                 _queryUseCount[queryKey] = 0;
@@ -3413,8 +4301,9 @@ Odgovori ISKLJUČIVO JSON:
                                 string fileName = $"AI_{Guid.NewGuid().ToString().Substring(0, 8)}.jpg";
                                 string fullPath = Path.Combine(GetCurrentProjectFolder(), fileName);
 
-                                byte[] data = await _httpClient.GetByteArrayAsync(dlUrl, ct);
-                                await File.WriteAllBytesAsync(fullPath, data, ct);
+                                using var dlStream = await _dlHttpClient.GetStreamAsync(dlUrl, ct);
+                                using var fileStream = new FileStream(fullPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+                                await dlStream.CopyToAsync(fileStream, ct);
                                 return fullPath;
                             }
                             LogToMainWindow($"   ⚠ Sve slike za '{searchQ.Substring(0, Math.Min(40, searchQ.Length))}' su već korišćene");
@@ -3445,8 +4334,6 @@ Odgovori ISKLJUČIVO JSON:
 
             await Dispatcher.InvokeAsync(() => mainWindow.SaveState());
 
-            // Ukloni stare video/slika klipove I stare tranzicione audio zvukove (🔊)
-            // Bez ovoga, svako novo generisanje akumulira stare zvukove
             var itemsToRemove = mainWindow.timelineItems
                 .Where(i => i.Type == "Image" || i.Type == "Video" ||
                             (i.Type == "Audio" && i.Name.StartsWith("🔊")))
@@ -3496,8 +4383,32 @@ Odgovori ISKLJUČIVO JSON:
             addedItems.Add(introItem);
             cursor += introDuration;
 
+            _timelineCursorOffset = cursor;
+
+            if (_enableAmbientSounds && storyBoard?.Scenes != null &&
+                storyBoard.Scenes.Any(s => !string.IsNullOrEmpty(s.AmbientPath)))
+            {
+                AnnounceToUser(L("mixing_ambience"), 90);
+                _ambientAudioPath = await MixAmbientWithMusic(
+                    _audioPath, storyBoard.Scenes, _totalDuration, _tempVideoFolder);
+            }
+
             var sortedSegments = _segments.OrderBy(s => s.StartTime).ToList();
             double maxEnd = cursor;
+
+            double anchorBrightnessValue = 0;
+            if (sortedSegments.Count > 2)
+            {
+                var anchorSegment = sortedSegments
+                    .Where(s => !string.IsNullOrEmpty(s.Path) && File.Exists(s.Path))
+                    .OrderByDescending(s => s.VisionScore)
+                    .FirstOrDefault();
+                if (anchorSegment != null)
+                {
+                    anchorBrightnessValue = 0.3 + (anchorSegment.VisionScore / 10.0) * 0.4;
+                    LogToMainWindow($"🎨 Color Match anchor: '{anchorSegment.Description}' (Score={anchorSegment.VisionScore:F1}, Brightness={anchorBrightnessValue:F3})");
+                }
+            }
 
             foreach (var segment in sortedSegments)
             {
@@ -3517,10 +4428,12 @@ Odgovori ISKLJUČIVO JSON:
                     Volume = 100,
                     TrackIndex = 0,
                     VideoEffect = new VideoEffectData(),
-                    // AudioDescription nosi MoodTag za color grading u RenderEngine-u
                     AudioDescription = !string.IsNullOrEmpty(segment.MoodTag)
-                        ? segment.MoodTag
-                        : segment.Description
+                        ? $"{segment.MoodTag}|energy={segment.Energy}" +
+                          (segment.IsStaticClip ? "|static=1" : "") +
+                          (anchorBrightnessValue > 0 ? $"|anchor_brightness={anchorBrightnessValue.ToString("F3", CultureInfo.InvariantCulture)}" : "")
+                        : $"{segment.Description}|energy={segment.Energy}" +
+                          (segment.IsStaticClip ? "|static=1" : "")
                 };
                 mainWindow.timelineItems.Add(newItem);
                 addedItems.Add(newItem);
@@ -3560,8 +4473,8 @@ Odgovori ISKLJUČIVO JSON:
                 txtOutroText.Text;
 
             double outroDuration = 7;
-            double outroStart = totalDuration - outroDuration;
-            if (outroStart < 0) outroStart = totalDuration;
+            double outroStart = maxEnd;
+            totalDuration = maxEnd + outroDuration;
             string outroImagePath = await CreateTextImage(outroText, outroDuration, false);
             var outroItem = new TimelineItem
             {
@@ -3591,9 +4504,6 @@ Odgovori ISKLJUČIVO JSON:
                 audioItem.Duration = totalDuration;
             }
 
-            // VAŽNO: Iteriramo SAMO kroz video/slika klipove (snimak liste prije dodavanja tranzicija)
-            // Ako bismo iterirali kroz addedItems i u petlji dodavali u addedItems,
-            // dobijamo beskonačan loop jer svaka tranzicija generise novu tranziciju.
             var videoImageItems = addedItems
                 .Where(i => i.Type == "Video" || i.Type == "Image")
                 .OrderBy(i => i.Start)
@@ -3607,12 +4517,9 @@ Odgovori ISKLJUČIVO JSON:
 
                 int currentEnergy = i < _segments.Count ? _segments[i]?.Energy ?? 3 : 3;
                 int nextEnergy = i + 1 < _segments.Count ? _segments[i + 1]?.Energy ?? 3 : 3;
-                // Koristimo prosječnu energiju tranzicije
                 int transEnergy = (currentEnergy + nextEnergy) / 2;
                 double fadeDuration = transEnergy >= 4 ? 0.3 : 0.4;
 
-                // Tranzicioni zvuk: dodaj samo na energičnijim tranzicijama (>=3)
-                // i variramo tip da ne bude monotono
                 bool addTransitionSound = _enableTransitionSounds && transEnergy >= 3;
                 string soundType = transEnergy >= 4 ? "whoosh" : "pop";
                 int transitionVolume = transEnergy switch
@@ -3673,12 +4580,16 @@ Odgovori ISKLJUČIVO JSON:
                 }
             }
 
+            LogToMainWindow("🎬 Ažuriram timeline prikaz...");
             await Dispatcher.InvokeAsync(() => mainWindow.UpdateTimelineDisplay());
+            LogToMainWindow("✅ Timeline prikaz ažuriran");
 
             int segmentsCount = _segments?.Count ?? 0;
             double segmentsTotal = _segments?.Sum(s => s.Duration) ?? 0;
 
-            WpfMessageBox.Show($"AI Video Creator završio!\n\nDodato: {segmentsCount} klipova\nTrajanje klipova: {FormatTime(segmentsTotal)} ({segmentsTotal:F1}s)\nTrajanje audio: {FormatTime(totalDuration)} ({totalDuration:F1}s)\n\nSada možete renderovati video (Ctrl+R).", "Završeno", MessageBoxButton.OK, MessageBoxImage.Information);
+            WpfMessageBox.Show(
+                LF("creator_finished", segmentsCount, FormatTime(segmentsTotal), segmentsTotal, FormatTime(totalDuration), totalDuration),
+                L("creator_finished_title"), MessageBoxButton.OK, MessageBoxImage.Information);
             DialogResult = true;
             Close();
         }
@@ -3791,7 +4702,7 @@ Odgovori ISKLJUČIVO JSON:
             }
             catch (Exception ex)
             {
-                AnnounceToUser("Greska pri citanju Pixabay kljuca: " + ex.Message);
+                AnnounceToUser(LF("pixabay_key_read_error", ex.Message));
             }
             return null;
         }
@@ -3809,103 +4720,303 @@ Odgovori ISKLJUČIVO JSON:
             }
             catch (Exception ex)
             {
-                AnnounceToUser("Greska pri cuvanju Pixabay kljuca: " + ex.Message);
+                AnnounceToUser(LF("pixabay_key_save_error", ex.Message));
             }
         }
 
-
         #region Mood Color Grading i Gradient Fallback
 
-        /// <summary>
-        /// Funkcija 6: Generiše color gradient video kao fallback
-        /// kada Pixabay ne vrati nijedan rezultat.
-        /// Koristi FFmpeg lavfi color source — ne treba internet.
-        /// </summary>
         private async Task<string> GenerateMoodGradient(string mood, double duration, string tempDir)
         {
             string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
             if (!File.Exists(ffmpegPath)) return null;
 
-            // Boje po mood-u
             string color = mood?.ToLower() switch
             {
-                "sad" or "melancholy"  => "0x3a5f8a",   // plava
-                "happy" or "joyful"    => "0xf4a020",   // narandžasta
-                "calm" or "peaceful"   => "0x4a9e6b",   // zelena
-                "excited" or "upbeat"  => "0xe03060",   // crvena
-                "romantic" or "love"   => "0xc04070",   // roze
-                "christmas"            => "0xb01010",   // tamnocrvena
-                "lullaby"              => "0x6a5acd",   // ljubičasta
-                _                      => "0x2060a0"    // default plava
+                "sad" or "melancholy" => "0x3a5f8a",
+                "happy" or "joyful" => "0xf4a020",
+                "calm" or "peaceful" => "0x4a9e6b",
+                "excited" or "upbeat" => "0xe03060",
+                "romantic" or "love" => "0xc04070",
+                "christmas" => "0xb01010",
+                "lullaby" => "0x6a5acd",
+                _ => "0x2060a0"
             };
 
             string outputPath = Path.Combine(tempDir, $"gradient_{Guid.NewGuid().ToString().Substring(0, 8)}.mp4");
             string dStr = duration.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-            // Gradient: boja se polako menja od tamnije do svetlije verzije
             double fadeOutStart = Math.Max(0, duration - 1);
             string fadeOutStr = fadeOutStart.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
             string args = $"-f lavfi -i \"color=c={color}:s=1280x720:d={dStr},format=yuv420p\" " +
                           $"-vf \"fade=in:0:25,fade=out:st={fadeOutStr}:d=1\" " +
-                          $"-c:v libx264 -preset veryfast -crf 23 -an -y \"{outputPath}\"";
+                          $"-c:v libx264 -preset veryfast -crf 23 -profile:v high -level 4.1 -pix_fmt yuv420p -an -y \"{outputPath}\"";
 
             var proc = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = ffmpegPath, Arguments = args,
-                    CreateNoWindow = true, UseShellExecute = false,
-                    RedirectStandardError = true
+                    FileName = ffmpegPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
                 }
             };
             proc.Start();
+            var _bgSo = proc.StandardOutput.ReadToEndAsync();
+            var _bgSe = proc.StandardError.ReadToEndAsync();
+            await Task.WhenAll(_bgSo, _bgSe);
             await proc.WaitForExitAsync();
 
             return (proc.ExitCode == 0 && File.Exists(outputPath)) ? outputPath : null;
         }
 
-        /// <summary>
-        /// Funkcija 4: Vraća FFmpeg vf filter string za color grading prema mood-u.
-        /// Koristi se u RenderEngine pri obradi svakog video klipa.
-        /// </summary>
         public static string GetMoodColorFilter(string mood, string context)
         {
             string m = (mood ?? "").ToLower();
             string c = (context ?? "").ToLower();
 
-            // Kontekst ima prioritet nad mood-om
-            if (c == "lullaby")   return "eq=brightness=0.05:saturation=0.7:contrast=0.95,vignette=PI/4";
-            if (c == "sad")       return "eq=saturation=0.5:contrast=0.9,colorbalance=bs=0.1";
-            if (c == "christmas") return "eq=saturation=1.3:contrast=1.1,colorbalance=rs=0.15:gs=-0.05";
-            if (c == "party")     return "eq=saturation=1.4:brightness=0.05:contrast=1.1";
-            if (c == "nature")    return "eq=saturation=1.1:contrast=1.05,colorbalance=gs=0.05";
+            if (c == "lullaby")
+                return "eq=brightness=0.04:saturation=0.85:contrast=0.95,vignette=PI/4";
+            if (c == "christmas")
+                return "eq=saturation=1.25:contrast=1.08," +
+                       "curves=r='0/0 0.5/0.56 1/1':g='0/0 0.5/0.52 1/1'";
+            if (c == "party")
+                return "eq=saturation=1.35:brightness=0.04:contrast=1.08," +
+                       "curves=r='0/0 0.5/0.54 1/1':g='0/0 0.5/0.53 1/1'";
+            if (c == "nature")
+                return "eq=saturation=1.12:contrast=1.04:brightness=0.02," +
+                       "curves=g='0/0 0.5/0.53 1/1'";
+            if (c == "outdoor" || c == "health")
+                return "eq=saturation=1.18:brightness=0.03:contrast=1.04," +
+                       "curves=r='0/0 0.5/0.53 1/1':g='0/0 0.5/0.525 1/1'";
+            if (c == "music" || c == "dance")
+                return "eq=saturation=1.25:brightness=0.03:contrast=1.06," +
+                       "curves=r='0/0 0.5/0.535 1/1':g='0/0 0.5/0.525 1/1'";
+            if (c == "school")
+                return "eq=saturation=1.10:brightness=0.02:contrast=1.03," +
+                       "curves=r='0/0 0.5/0.52 1/1':g='0/0 0.5/0.515 1/1'";
+            if (c == "animal")
+                return "eq=saturation=1.08:brightness=0.02:contrast=1.03," +
+                       "curves=g='0/0 0.5/0.515 1/1'";
+            if (c == "sad")
+                return "eq=saturation=0.88:contrast=0.96:brightness=-0.01";
 
-            // Fallback po mood-u
             return m switch
             {
-                "sad" or "melancholy" => "eq=saturation=0.5:contrast=0.9,colorbalance=bs=0.1",
-                "happy" or "joyful"   => "eq=saturation=1.2:brightness=0.03:contrast=1.05",
-                "calm" or "peaceful"  => "eq=saturation=0.9:contrast=0.95,vignette=PI/6",
-                "excited" or "upbeat" => "eq=saturation=1.3:contrast=1.1:brightness=0.05",
-                "romantic" or "love"  => "eq=saturation=1.1,colorbalance=rs=0.1:bs=-0.05",
-                _                     => "eq=saturation=1.05:contrast=1.02"  // blagi boost
+                "sad" or "melancholy" =>
+                    "eq=saturation=0.90:contrast=0.97",
+                "happy" or "joyful" =>
+                    "eq=saturation=1.20:brightness=0.03:contrast=1.05," +
+                    "curves=r='0/0 0.5/0.53 1/1':g='0/0 0.5/0.52 1/1'",
+                "calm" or "peaceful" =>
+                    "eq=saturation=1.02:contrast=0.98:brightness=0.01",
+                "excited" or "upbeat" =>
+                    "eq=saturation=1.30:contrast=1.08:brightness=0.04," +
+                    "curves=r='0/0 0.5/0.54 1/1':g='0/0 0.5/0.53 1/1'",
+                "romantic" or "love" =>
+                    "eq=saturation=1.12:brightness=0.02," +
+                    "curves=r='0/0 0.5/0.535 1/1':g='0/0 0.5/0.52 1/1'",
+                "playful" =>
+                    "eq=saturation=1.25:brightness=0.03:contrast=1.06," +
+                    "curves=r='0/0 0.5/0.535 1/1':g='0/0 0.5/0.525 1/1'",
+                _ =>
+                    "eq=saturation=1.10:brightness=0.02:contrast=1.03," +
+                    "curves=r='0/0 0.5/0.52 1/1':g='0/0 0.5/0.515 1/1'"
             };
         }
 
         #endregion
 
+        #region Sub-scene detekcija — Literal Visual Sync
+
+        private List<string> DetectSubSceneQueries(string lyric, string style)
+        {
+            if (string.IsNullOrWhiteSpace(lyric)) return null;
+            string lower = lyric.ToLower();
+
+            bool hasWinterClothing = (lower.Contains("čizme") || lower.Contains("izme")) &&
+                                     (lower.Contains("rukavice") || lower.Contains("skafander") ||
+                                      lower.Contains("kapu") || lower.Contains("šal") || lower.Contains("kaput"));
+            if (hasWinterClothing)
+            {
+                var q = new List<string>();
+                if (lower.Contains("čizme") || lower.Contains("izme"))
+                    q.Add(BuildLiteralSearchQuery("child winter boots snow outdoor", "", "", style));
+                if (lower.Contains("rukavice"))
+                    q.Add(BuildLiteralSearchQuery("child winter gloves snow hands", "", "", style));
+                if (lower.Contains("skafander") || lower.Contains("kombinezon"))
+                    q.Add(BuildLiteralSearchQuery("child winter snowsuit playing snow", "", "", style));
+                if (lower.Contains("kapu") || lower.Contains("kapi") || lower.Contains("šešir"))
+                    q.Add(BuildLiteralSearchQuery("child wearing winter hat snow smiling", "", "", style));
+                if (lower.Contains("šal") || lower.Contains("salom"))
+                    q.Add(BuildLiteralSearchQuery("child scarf winter cozy warm", "", "", style));
+                if (lower.Contains("kaput") || lower.Contains("jakna"))
+                    q.Add(BuildLiteralSearchQuery("child winter coat dressed warm outdoor", "", "", style));
+                if (q.Count >= 2) return q;
+            }
+
+            int seasonCount = 0;
+            if (lower.Contains("proleć") || lower.Contains("proljeć") || lower.Contains("spring")) seasonCount++;
+            if (lower.Contains("jesen") || lower.Contains("autumn") || lower.Contains("fall")) seasonCount++;
+            if (lower.Contains("zima") || lower.Contains("winter")) seasonCount++;
+            if (lower.Contains("leto") || lower.Contains("ljeto") || lower.Contains("summer")) seasonCount++;
+
+            if (seasonCount >= 2)
+            {
+                var q = new List<string>();
+                if (lower.Contains("proleć") || lower.Contains("proljeć"))
+                    q.Add(BuildLiteralSearchQuery("child spring flowers park playing", "", "", style));
+                if (lower.Contains("jesen") || lower.Contains("autumn") || lower.Contains("fall"))
+                    q.Add(BuildLiteralSearchQuery("child autumn leaves park playing", "", "", style));
+                if (lower.Contains("zima") || lower.Contains("winter"))
+                    q.Add(BuildLiteralSearchQuery("child winter snow playing outdoor", "", "", style));
+                if (lower.Contains("leto") || lower.Contains("ljeto") || lower.Contains("summer"))
+                    q.Add(BuildLiteralSearchQuery("child summer sunny park playing", "", "", style));
+                if (q.Count >= 2) return q;
+            }
+
+            int instCount = 0;
+            if (lower.Contains("gitara") || lower.Contains("guitar")) instCount++;
+            if (lower.Contains("klavir") || lower.Contains("piano")) instCount++;
+            if (lower.Contains("bubanj") || lower.Contains("drum")) instCount++;
+            if (lower.Contains("violina") || lower.Contains("violin")) instCount++;
+            if (lower.Contains("flauta") || lower.Contains("flute")) instCount++;
+
+            if (instCount >= 2)
+            {
+                var q = new List<string>();
+                if (lower.Contains("gitara") || lower.Contains("guitar"))
+                    q.Add(BuildLiteralSearchQuery("child playing guitar music happy", "", "", style));
+                if (lower.Contains("klavir") || lower.Contains("piano"))
+                    q.Add(BuildLiteralSearchQuery("child playing piano keyboard music", "", "", style));
+                if (lower.Contains("bubanj") || lower.Contains("drum"))
+                    q.Add(BuildLiteralSearchQuery("child playing drums music fun", "", "", style));
+                if (lower.Contains("violina") || lower.Contains("violin"))
+                    q.Add(BuildLiteralSearchQuery("child playing violin music", "", "", style));
+                if (lower.Contains("flauta") || lower.Contains("flute"))
+                    q.Add(BuildLiteralSearchQuery("child playing flute music", "", "", style));
+                if (q.Count >= 2) return q;
+            }
+
+            int actionCount = 0;
+            bool hasRun = lower.Contains("trči") || lower.Contains("trčanje");
+            bool hasJump = lower.Contains("skače") || lower.Contains("skoči");
+            bool hasSing = lower.Contains("peva") || lower.Contains("pjeva");
+            bool hasDance = lower.Contains("pleše") || lower.Contains("plešeš") || lower.Contains("ples");
+            bool hasSmile = lower.Contains("smej") || lower.Contains("smije") || lower.Contains("blistaj");
+            bool hasWalk = lower.Contains("šeta") || lower.Contains("šetaj") || lower.Contains("hoda");
+
+            if (hasRun) actionCount++;
+            if (hasJump) actionCount++;
+            if (hasSing) actionCount++;
+            if (hasDance) actionCount++;
+            if (hasSmile) actionCount++;
+
+            if (actionCount >= 2)
+            {
+                var q = new List<string>();
+                if (hasRun) q.Add(BuildLiteralSearchQuery("children running fast outdoor happy", "", "", style));
+                if (hasJump) q.Add(BuildLiteralSearchQuery("child jumping happy excited outdoor", "", "", style));
+                if (hasSing) q.Add(BuildLiteralSearchQuery("child singing joyful music", "", "", style));
+                if (hasDance) q.Add(BuildLiteralSearchQuery("children dancing joyful colorful", "", "", style));
+                if (hasSmile) q.Add(BuildLiteralSearchQuery("children laughing happy smiling faces", "", "", style));
+                if (q.Count >= 2) return q;
+            }
+
+            var animalMap = new Dictionary<string, string>
+            {
+                {"pas ",  "dog playing happy"}, {"psa ", "dog playing happy"}, {"psić", "puppy cute"},
+                {"mačka", "cat cute kitten"},   {"mace", "cat cute kitten"},
+                {"zec",   "rabbit cute bunny"}, {"kunić", "rabbit cute"},
+                {"ptica", "bird flying colorful"}, {"ptice", "birds flying"},
+                {"riba",  "fish aquarium colorful"}, {"ribica", "fish colorful water"},
+                {"konj",  "horse running field"}, {"medved", "bear forest nature"},
+                {"slon",  "elephant nature wild"}, {"leptir", "butterfly flower garden"}
+            };
+            var foundAnimals = animalMap.Where(kv => lower.Contains(kv.Key)).ToList();
+            if (foundAnimals.Count >= 2)
+            {
+                return foundAnimals.Take(4)
+                    .Select(kv => BuildLiteralSearchQuery("child " + kv.Value, "", "", style))
+                    .ToList();
+            }
+
+            return null;
+        }
+
+        private async Task<string> BuildSubSceneVideo(
+            List<string> queries, double totalDuration, string tempDir, CancellationToken ct)
+        {
+            double clipDur = Math.Max(1.5, Math.Round(totalDuration / queries.Count, 1));
+            var clipPaths = new List<string>();
+
+            foreach (var query in queries)
+            {
+                ct.ThrowIfCancellationRequested();
+                string path = await SearchAndDownloadMedia(query, 1080, "video", ct, clipDur);
+                if (path == null) continue;
+
+                double actualDur = await GetVideoDuration(path);
+                if (actualDur > clipDur + 0.3)
+                    path = await TrimVideoToDuration(path, clipDur, tempDir);
+                clipPaths.Add(path);
+            }
+
+            if (clipPaths.Count == 0) return null;
+            if (clipPaths.Count == 1) return clipPaths[0];
+
+            string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
+            if (!File.Exists(ffmpegPath)) return clipPaths[0];
+
+            string concatFile = Path.Combine(tempDir, $"subscene_{Guid.NewGuid().ToString().Substring(0, 8)}.txt");
+            string outputPath = Path.Combine(tempDir, $"subscene_out_{Guid.NewGuid().ToString().Substring(0, 8)}.mp4");
+
+            using (var sw = new StreamWriter(concatFile, false, new System.Text.UTF8Encoding(false)))
+                foreach (var p in clipPaths)
+                    sw.WriteLine("file '" + p.Replace("\\", "/") + "'");
+
+            string args = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" " +
+                          $"-vf \"scale=1920:1080:flags=lanczos,format=yuv420p\" " +
+                          $"-c:v h264_nvenc -preset p2 -rc vbr -cq 23 -b:v 0 -profile:v high -level 4.1 " +
+                          $"-an -y \"{outputPath}\"";
+            var proc = new System.Diagnostics.Process
+            {
+                StartInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
+                }
+            };
+            proc.Start();
+            var soTask = proc.StandardOutput.ReadToEndAsync();
+            var seTask = proc.StandardError.ReadToEndAsync();
+            await Task.WhenAll(soTask, seTask);
+            await proc.WaitForExitAsync(ct);
+            bool ok = proc.ExitCode == 0;
+
+            if (ok && File.Exists(outputPath) && new FileInfo(outputPath).Length > 1000)
+                return outputPath;
+
+            return clipPaths[0];
+        }
+
+        #endregion
+
         #region MultiClip — više videa po sceni
-        /// <summary>
-        /// Preuzima više kratkih videa za istu scenu i spaja ih u jedan klip.
-        /// Koristi se kada je targetDuration dugo (npr. 21s) a Pixabay vraća kratke videe.
-        /// Rezultat: vizuelna raznolikost unutar jedne scene.
-        /// </summary>
         private async Task<string> SearchAndDownloadMultipleMedia(
             string keywords, string fallbackKeywords, string mediaType,
             double targetDuration, string tempDir, CancellationToken ct)
         {
-            int clipCount = Math.Max(2, (int)Math.Ceiling(targetDuration / 8.0));
-            clipCount = Math.Min(clipCount, 4); // max 4 klipa po sceni
+            int clipCount = Math.Max(2, (int)Math.Ceiling(targetDuration / 5.0));
+            clipCount = Math.Min(clipCount, 4);
 
             double clipDuration = targetDuration / clipCount;
             var clipPaths = new List<string>();
@@ -3915,7 +5026,6 @@ Odgovori ISKLJUČIVO JSON:
             for (int c = 0; c < clipCount; c++)
             {
                 ct.ThrowIfCancellationRequested();
-                // Naizmenično koristimo primary i fallback query za vizuelnu raznolikost
                 string q = (c % 2 == 0) ? keywords : (fallbackKeywords ?? keywords);
                 string path = await SearchAndDownloadMedia(q, 1080, mediaType, ct, clipDuration);
                 if (path == null && fallbackKeywords != null)
@@ -3925,16 +5035,14 @@ Odgovori ISKLJUČIVO JSON:
             }
 
             if (clipPaths.Count == 0) return null;
-            if (clipPaths.Count == 1) return clipPaths[0]; // jedan klip — vrati direktno
+            if (clipPaths.Count == 1) return clipPaths[0];
 
-            // Spoji klipove concat-om
             string ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
             if (!File.Exists(ffmpegPath)) return clipPaths[0];
 
             string concatList = Path.Combine(tempDir, $"multiclip_{Guid.NewGuid().ToString().Substring(0, 8)}.txt");
-            string outputPath  = Path.Combine(tempDir, $"multi_{Guid.NewGuid().ToString().Substring(0, 8)}.mp4");
+            string outputPath = Path.Combine(tempDir, $"multi_{Guid.NewGuid().ToString().Substring(0, 8)}.mp4");
 
-            // Pripremi klipove — svaki trimuj/loopuj na clipDuration
             var preparedPaths = new List<string>();
             foreach (var cp in clipPaths)
             {
@@ -3945,34 +5053,87 @@ Odgovori ISKLJUČIVO JSON:
                 preparedPaths.Add(prepared);
             }
 
-            // Napiši concat listu
-            using (var sw = new System.IO.StreamWriter(concatList, false, System.Text.Encoding.UTF8))
+            using (var sw = new System.IO.StreamWriter(concatList, false, new System.Text.UTF8Encoding(false)))
                 foreach (var p in preparedPaths)
-                    sw.WriteLine("file '" + p.Replace("\\", "/") + "' ");
+                    sw.WriteLine("file '" + p.Replace("\\", "/") + "'");
 
-            // -c copy: bez re-encode — svi klipovi su već isti format/codec (Pixabay MP4/H264)
-            // Dramatično brže od libx264 re-encode koji je trajao minute po spajanju
-            string args = $"-f concat -safe 0 -i \"{concatList}\" -c copy -an -y \"{outputPath}\"";
+            string args = $"-nostdin -f concat -safe 0 -i \"{concatList}\" " +
+                          $"-vf \"scale=1920:1080:flags=lanczos,format=yuv420p\" " +
+                          $"-c:v h264_nvenc -preset p2 -rc vbr -cq 23 -b:v 0 -profile:v high -level 4.1 " +
+                          $"-an -y \"{outputPath}\"";
 
             var proc = new System.Diagnostics.Process
             {
                 StartInfo = new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = ffmpegPath, Arguments = args,
-                    CreateNoWindow = true, UseShellExecute = false,
-                    RedirectStandardError = true
+                    FileName = ffmpegPath,
+                    Arguments = args,
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true
                 }
             };
             proc.Start();
+
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            await Task.WhenAll(stdoutTask, stderrTask);
             await proc.WaitForExitAsync(ct);
+            string ffmpegErr = stderrTask.Result;
+
+            if ((proc.ExitCode != 0 || !File.Exists(outputPath) || new FileInfo(outputPath).Length < 1000)
+                && (ffmpegErr.Contains("nvenc") || ffmpegErr.Contains("No NVENC") || ffmpegErr.Contains("Cannot load")))
+            {
+                LogToMainWindow("⚠ MultiClip: NVENC nedostupan, koristim libx264...");
+                string argsCpu = $"-nostdin -f concat -safe 0 -i \"{concatList}\" " +
+                                 $"-vf \"scale=1920:1080:flags=lanczos,format=yuv420p\" " +
+                                 $"-c:v libx264 -preset fast -crf 23 -profile:v high -level 4.1 " +
+                                 $"-an -y \"{outputPath}\"";
+                var proc2 = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = ffmpegPath,
+                        Arguments = argsCpu,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardError = true,
+                        RedirectStandardOutput = true
+                    }
+                };
+                proc2.Start();
+                var so2 = proc2.StandardOutput.ReadToEndAsync();
+                var se2 = proc2.StandardError.ReadToEndAsync();
+                await Task.WhenAll(so2, se2);
+                await proc2.WaitForExitAsync(ct);
+                ffmpegErr = se2.Result;
+                if (proc2.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length > 1000)
+                {
+                    LogToMainWindow($"✅ MultiClip spojen (libx264): {preparedPaths.Count} klipa → {targetDuration:F1}s");
+                    return outputPath;
+                }
+            }
 
             if (proc.ExitCode == 0 && File.Exists(outputPath) && new FileInfo(outputPath).Length > 1000)
             {
-                LogToMainWindow($"✅ MultiClip spojen: {clipPaths.Count} klipa → {targetDuration:F1}s");
+                LogToMainWindow($"✅ MultiClip spojen: {preparedPaths.Count} klipa → {targetDuration:F1}s");
                 return outputPath;
             }
 
-            LogToMainWindow("⚠ MultiClip concat neuspješan — koristim prvi klip");
+            if (!string.IsNullOrEmpty(ffmpegErr))
+            {
+                var errLines = ffmpegErr.Split('\n');
+                var realError = string.Join("\n", errLines
+                    .Where(l => l.Contains("Error") || l.Contains("Invalid") || l.Contains("failed") || l.Contains("error") || l.Contains("moov"))
+                    .Take(5));
+                if (!string.IsNullOrEmpty(realError))
+                    LogToMainWindow($"⚠ MultiClip FFmpeg greska: {realError}");
+                else
+                    LogToMainWindow($"⚠ MultiClip FFmpeg exit={proc.ExitCode}");
+            }
+
+            LogToMainWindow("⚠ MultiClip concat neuspjesan — koristim prvi klip");
             return clipPaths[0];
         }
         #endregion
@@ -4012,7 +5173,7 @@ Odgovori ISKLJUČIVO JSON:
 
         private void btnCancel_Click(object sender, RoutedEventArgs e)
         {
-            if (_isRunning) { _cts?.Cancel(); AnnounceToUser("Otkazivanje..."); btnCancel.Content = "Otkazivanje..."; btnCancel.IsEnabled = false; }
+            if (_isRunning) { _cts?.Cancel(); AnnounceToUser(L("cancelling_msg")); btnCancel.Content = L("cancelling_button"); btnCancel.IsEnabled = false; }
             else { DialogResult = false; Close(); }
         }
     }
@@ -4033,6 +5194,8 @@ Odgovori ISKLJUČIVO JSON:
         public double StartTime { get; set; }
         public double Duration { get; set; }
         public string AmbientPath { get; set; }
+        public double VisionScore { get; set; } = 6.0;
+        public bool IsStaticClip { get; set; } = false;
     }
 
     public class StoryBoard
@@ -4053,7 +5216,9 @@ Odgovori ISKLJUČIVO JSON:
         public string VoiceNarrationPath { get; set; }
         public int Energy { get; set; }
         public string Emotion { get; set; }
-        public string MoodTag { get; set; }  // "mood:X|context:Y" za color grading
+        public string MoodTag { get; set; }
+        public double VisionScore { get; set; } = 6.0;
+        public bool IsStaticClip { get; set; } = false;
     }
 
     public class SongAnalysis
@@ -4086,4 +5251,4 @@ Odgovori ISKLJUČIVO JSON:
 
     #endregion
 
-} // end class AIVideoCreator
+}

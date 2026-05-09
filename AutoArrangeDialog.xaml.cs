@@ -14,6 +14,11 @@ namespace UltraVideoEditor
 {
     public partial class AutoArrangeDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public double IntroDuration { get; private set; } = 5;
         public double OutroDuration { get; private set; } = 7;
         public string EffectMode { get; private set; } = "auto";
@@ -97,7 +102,7 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                WpfMessageBox.Show($"Ne mogu otvoriti link: {ex.Message}", "Greška",
+                WpfMessageBox.Show(LF("aa_link_error", ex.Message), L("error_title"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
@@ -116,12 +121,12 @@ namespace UltraVideoEditor
                     EffectMode = "auto";
                     txtEffectSequence.IsEnabled = false;
                 }
-                else if (mode.Contains("Ručno"))
+                else if (mode.Contains(L("aa_effect_manual").Replace("🎲 ", "")))
                 {
                     EffectMode = "manual";
                     txtEffectSequence.IsEnabled = true;
                 }
-                else if (mode.Contains("Nasumično"))
+                else if (mode.Contains(L("aa_effect_random").Replace("🎲 ", "")))
                 {
                     EffectMode = "random";
                     txtEffectSequence.IsEnabled = false;
@@ -157,8 +162,7 @@ namespace UltraVideoEditor
 
             if (IntroDuration + OutroDuration >= _audioDuration)
             {
-                WpfMessageBox.Show($"Najavni i odjavni tekst zajedno ({IntroDuration + OutroDuration}s) su duži od audio fajla ({_audioDuration:F1}s). Smanjite trajanje.",
-                    "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(LF("aa_too_long", IntroDuration + OutroDuration), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

@@ -85,6 +85,12 @@ namespace UltraVideoEditor
             return null;
         }
 
+        
+        // Language helper
+        private static string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public static bool IsWhisperAvailable() => FindWhisperExecutable() != null;
 
         private static async Task<string> ExtractAudioAsync(string mediaPath, string tempDir, string ffmpegPath)
@@ -156,14 +162,14 @@ namespace UltraVideoEditor
             if (whisperExe == null)
             {
                 result.ErrorMessage =
-                    "Whisper nije pronađen na ovom računaru.\n\n" +
-                    "Instaliraj ga na jedan od ova dva načina:\n\n" +
-                    "OPCIJA A — Python (preporučeno):\n" +
+                    "Whisper not found on this computer.\n\n" +
+                    "Install it in one of these ways:\n\n" +
+                    "OPTION A — Python (recommended):\n" +
                     "  pip install openai-whisper\n\n" +
-                    "OPCIJA B — Standalone (bez Python-a):\n" +
-                    "  Preuzmi faster-whisper-xxl.exe sa GitHub-a\n" +
-                    "  i stavi ga pored UltraVideoEditor.exe\n\n" +
-                    "Nakon instalacije, ponovo pokreni aplikaciju.";
+                    "OPTION B — Standalone (no Python):\n" +
+                    "  Download faster-whisper-xxl.exe from GitHub\n" +
+                    "  and place it next to UltraVideoEditor.exe\n\n" +
+                    "After installation, restart the application.";
                 return result;
             }
 
@@ -172,7 +178,7 @@ namespace UltraVideoEditor
 
             if (!File.Exists(ffmpegPath))
             {
-                result.ErrorMessage = "FFmpeg nije pronađen.";
+                result.ErrorMessage = L("re_ffmpeg_missing");
                 return result;
             }
 
@@ -190,7 +196,7 @@ namespace UltraVideoEditor
                     audioPath = await ExtractAudioAsync(mediaPath, tempDir, ffmpegPath);
                     if (audioPath == null)
                     {
-                        result.ErrorMessage = "Nije moguće ekstrahirati audio iz video fajla.";
+                        result.ErrorMessage = L("at_extract_error");
                         return result;
                     }
                 }
@@ -234,14 +240,16 @@ namespace UltraVideoEditor
                 whisperProc.Start();
                 whisperProc.BeginErrorReadLine();
 
-                await Task.Run(() =>
+                // WaitForExitAsync(ct) direktno reaguje na otkazivanje — nema polling latency
+                try
                 {
-                    while (!whisperProc.HasExited)
-                    {
-                        if (ct.IsCancellationRequested) { whisperProc.Kill(); return; }
-                        Thread.Sleep(200);
-                    }
-                }, ct);
+                    await whisperProc.WaitForExitAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    try { whisperProc.Kill(); } catch { }
+                    throw;
+                }
 
                 ct.ThrowIfCancellationRequested();
 
@@ -258,7 +266,7 @@ namespace UltraVideoEditor
 
                 if (srtPath == null || !File.Exists(srtPath))
                 {
-                    result.ErrorMessage = $"Whisper nije generisao SRT fajl.\n\nGreška:\n{stdErr}";
+                    result.ErrorMessage = LF("at_no_srt", stdErr);
                     return result;
                 }
 
@@ -281,7 +289,7 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                result.ErrorMessage = $"Greška: {ex.Message}";
+                result.ErrorMessage = LF("generic_error", ex.Message);
             }
             finally
             {

@@ -11,14 +11,14 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="🎬 AI PREDLOŽENI SCENARIJ" FontSize="16" FontWeight="Bold" 
+        <TextBlock Text="🎬 AI PROPOSED SCENARIO" FontSize="16" FontWeight="Bold" 
                    Foreground="#00E676" HorizontalAlignment="Center" Margin="0,0,0,10"/>
 
-        <TextBlock Text="Možete mijenjati sliku, trajanje i efekat za svaku scenu:" 
+        <TextBlock Text="You can change the image, duration and effect for each scene:" 
                    Foreground="White" Margin="0,0,0,10"/>
 
         <ListBox x:Name="lstScenes" Grid.Row="1" Background="#1E1E1E" Foreground="White"
-                 AutomationProperties.Name="Lista scena - možete mijenjati parametre">
+                 AutomationProperties.Name="Scene list - you can change parameters">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Border BorderBrush="#444" BorderThickness="0,0,0,1" Padding="5" Margin="0,0,0,5">
@@ -45,7 +45,7 @@
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,15">
             <Button x:Name="btnConfirm" Content="✅ POTVRDI I NAPRAVI ANIMACIJU" Click="Confirm_Click" 
                     Width="220" Height="40" Background="#2E7D32" Foreground="White" FontWeight="Bold" Margin="0,0,10,0"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" 
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="Cancel_Click" 
                     Width="100" Height="40" Background="#B71C1C" Foreground="White"/>
         </StackPanel>
     </Grid>

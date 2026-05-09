@@ -56,6 +56,10 @@ namespace UltraVideoEditor
     // Timeline Item sa podrškom za više traka i keyframe-ove
     public class TimelineItem
     {
+        private static string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public double FixedPosition { get; set; } = 0;
         public string Path { get; set; } = "";
         public double Duration { get; set; } = 5.0;
@@ -146,7 +150,7 @@ namespace UltraVideoEditor
             };
 
             string typeInfo = IsAudio ? "Audio" : (IsVideo ? "Video" : "Slika");
-            string volumeInfo = IsAudio ? $", jačina: {Volume:F0}%" : "";
+            string volumeInfo = IsAudio ? string.Format(L("models_volume_sfx"), Volume) : "";
             string audioDescInfo = !string.IsNullOrEmpty(AudioDescription) ? $", opis: {AudioDescription}" : "";
             string textOverlayInfo = TextOverlay.Enabled && !string.IsNullOrEmpty(TextOverlay.Text) ? $", tekst: {TextOverlay.Text}" : "";
 
@@ -170,11 +174,15 @@ namespace UltraVideoEditor
         {
             get
             {
-                string tip = IsAudio ? "Audio" : (IsImage ? "Slika" : "Video");
-                string opis = !string.IsNullOrEmpty(AudioDescription) ? $". Opis: {AudioDescription}" : "";
-                string tekst = TextOverlay.Enabled && !string.IsNullOrEmpty(TextOverlay.Text) ? $". Tekst na slici: {TextOverlay.Text}" : "";
+                string tip = IsAudio ? "Audio" : (IsImage ? L("model_image2") : "Video");
+                string opis = !string.IsNullOrEmpty(AudioDescription) ? string.Format(L("model_desc"), AudioDescription) : "";
+                string tekst = TextOverlay.Enabled && !string.IsNullOrEmpty(TextOverlay.Text) ? string.Format(L("model_txt_on"), TextOverlay.Text) : "";
                 string track = TrackName;
-                return $"{track} {Index}. {tip}: {Name}. Trajanje: {TimeSpan.FromSeconds(Duration):mm\\:ss}. Počinje u {TimeSpan.FromSeconds(Start):mm\\:ss}, završava u {TimeSpan.FromSeconds(End):mm\\:ss}. Jačina zvuka: {Volume}%{opis}{tekst}";
+                return string.Format(L("model_acc_text"), track, Index, tip, Name,
+                    TimeSpan.FromSeconds(Duration).ToString(@"mm\:ss"),
+                    TimeSpan.FromSeconds(Start).ToString(@"mm\:ss"),
+                    TimeSpan.FromSeconds(End).ToString(@"mm\:ss"),
+                    Volume, opis, tekst);
             }
         }
     }
@@ -217,19 +225,8 @@ namespace UltraVideoEditor
         public double Confidence { get; set; } = 0;
     }
 
-    public class TranscriptionResult
-    {
-        public string Text { get; set; }
-        public string Language { get; set; }
-        public List<TranscriptionSegment> Segments { get; set; }
-    }
-
-    public class TranscriptionSegment
-    {
-        public double Start { get; set; }
-        public double End { get; set; }
-        public string Text { get; set; }
-    }
+    // TranscriptionResult i TranscriptionSegment definisani su u AITranscription.cs kao ugnjezdene klase.
+    // Ovdje su bili duplirana definicija — uzrokovala CS0101 build error. Obrisano.
 
     public class AILayoutResponse
     {

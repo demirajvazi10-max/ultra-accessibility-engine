@@ -7,6 +7,11 @@ namespace UltraVideoEditor
 {
     public partial class VolumeControl : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public double Volume { get; private set; }
 
         public VolumeControl(double currentVolume = 100)
@@ -15,7 +20,7 @@ namespace UltraVideoEditor
             Volume = currentVolume;
             sldVolume.Value = currentVolume;
             txtVolumeValue.Text = $"{currentVolume:F0}%";
-            AutomationProperties.SetName(this, "Podešavanje jačine zvuka");
+            AutomationProperties.SetName(this, L("vc_acc_window"));
         }
 
         private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)

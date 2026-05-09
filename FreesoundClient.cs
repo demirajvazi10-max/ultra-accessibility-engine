@@ -17,7 +17,12 @@ namespace UltraVideoEditor
 
     public class FreesoundClient
     {
-        private readonly HttpClient _http;       // Za API pozive (sa Token auth)
+        private readonly HttpClient _http;
+        // Language helper
+        private static string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+       // Za API pozive (sa Token auth)
         private readonly HttpClient _dlHttp;     // Za download preview-ova (BEZ auth — CDN ne prihvata Token header!)
         private readonly string     _apiKey;
 
@@ -93,12 +98,14 @@ namespace UltraVideoEditor
             _apiKey = apiKey;
 
             // HTTP klijent SA autentifikacijom — samo za Freesound API pozive
-            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+            // 45s umjesto 30s — Freesound server ponekad kasni (rate limiting, server load)
+            _http = new HttpClient { Timeout = TimeSpan.FromSeconds(45) };
             _http.DefaultRequestHeaders.Add("Authorization", $"Token {_apiKey}");
 
             // HTTP klijent BEZ autentifikacije — za download sa CDN-a (cdn.freesound.org)
             // Freesound CDN vraća 404 ako šalješ Authorization header!
-            _dlHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+            // Timeout 3 minute — audio fajlovi mogu biti 10-50MB na sporijoj konekciji
+            _dlHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(3) };
             _dlHttp.DefaultRequestHeaders.Add("User-Agent", "UltraVideoEditor/1.0");
         }
 
@@ -183,43 +190,59 @@ namespace UltraVideoEditor
                     "&fields=id,name,duration,previews,type" +
                     "&page_size=15&sort=rating_desc";
 
-                HttpResponseMessage searchResp = await _http.GetAsync(url, ct);
+                // Lokalni helper koji hvata timeout i vraća null umjesto bacanja exceptiona
+                // — sprečava da jedan spori Freesound API poziv zablokirta čitav generator
+                async Task<HttpResponseMessage> SafeGet(string reqUrl)
+                {
+                    try { return await _http.GetAsync(reqUrl, ct); }
+                    catch (TaskCanceledException) when (!ct.IsCancellationRequested)
+                    {
+                        LastError = $"Freesound API timeout za: {reqUrl.Substring(0, Math.Min(80, reqUrl.Length))}";
+                        return null; // server spor → vrati null, ne baci exception
+                    }
+                }
+
+                HttpResponseMessage searchResp = await SafeGet(url);
+                if (searchResp == null) return null; // timeout na prvom pokušaju → odustani
 
                 // Pokušaj 2: field-recording tip + duration filter
-                if (!searchResp.IsSuccessStatusCode || (await TryGetHits(searchResp))?.Count == 0)
+                if (searchResp?.IsSuccessStatusCode == true && (await TryGetHits(searchResp))?.Count == 0
+                    || searchResp?.IsSuccessStatusCode == false)
                 {
                     url = "https://freesound.org/apiv2/search/text/" +
                         $"?query={Uri.EscapeDataString(query)}" +
                         $"&filter=duration:[{minDurStr}%20TO%20{maxDurStr}]%20type:field-recording" +
                         "&fields=id,name,duration,previews,type" +
                         "&page_size=15&sort=rating_desc";
-                    searchResp = await _http.GetAsync(url, ct);
+                    searchResp = await SafeGet(url) ?? searchResp; // zadrži prethodni ako novi timeout
                 }
 
                 // Pokušaj 3: samo query, bez type filtera
-                if (!searchResp.IsSuccessStatusCode)
+                if (searchResp?.IsSuccessStatusCode == false)
                 {
                     url = "https://freesound.org/apiv2/search/text/" +
                         $"?query={Uri.EscapeDataString(query)}" +
                         $"&filter=duration:[{minDurStr}%20TO%20{maxDurStr}]" +
                         "&fields=id,name,duration,previews,type" +
                         "&page_size=15&sort=rating_desc";
-                    searchResp = await _http.GetAsync(url, ct);
+                    searchResp = await SafeGet(url) ?? searchResp;
                 }
 
                 // Pokušaj 4: bez ikakvog filtera
-                if (!searchResp.IsSuccessStatusCode)
+                if (searchResp?.IsSuccessStatusCode == false)
                 {
                     url = "https://freesound.org/apiv2/search/text/" +
                         $"?query={Uri.EscapeDataString(query)}" +
                         "&fields=id,name,duration,previews,type" +
                         "&page_size=15&sort=rating_desc";
-                    searchResp = await _http.GetAsync(url, ct);
+                    searchResp = await SafeGet(url) ?? searchResp;
                 }
 
-                if (!searchResp.IsSuccessStatusCode)
+                if (searchResp == null || !searchResp.IsSuccessStatusCode)
                 {
-                    LastError = $"Search HTTP {(int)searchResp.StatusCode}: {searchResp.ReasonPhrase}";
+                    LastError = searchResp == null
+                        ? "Freesound API nije odgovorio (timeout)"
+                        : $"Search HTTP {(int)searchResp.StatusCode}: {searchResp.ReasonPhrase}";
                     return null;
                 }
 
@@ -297,24 +320,32 @@ namespace UltraVideoEditor
                     return null;
                 }
 
-                // CDN download BEZ Authorization headera
-                HttpResponseMessage dlResp = await _dlHttp.GetAsync(dlUrl, ct);
+                // CDN download BEZ Authorization headera — streaming direktno na disk
+                // GetAsync sa HttpCompletionOption.ResponseHeadersRead ne čeka cijeli body
+                HttpResponseMessage dlResp = await _dlHttp.GetAsync(dlUrl, HttpCompletionOption.ResponseHeadersRead, ct);
                 if (!dlResp.IsSuccessStatusCode)
                 {
                     LastError = $"CDN download HTTP {(int)dlResp.StatusCode} za: {dlUrl}";
                     return null;
                 }
 
-                byte[] data = await dlResp.Content.ReadAsByteArrayAsync(ct);
-                if (data == null || data.Length < 1000)
+                string name = $"ambient_{Guid.NewGuid().ToString().Substring(0, 8)}.mp3";
+                string dest = Path.Combine(outputDir, name);
+
+                using (var dlStream = await dlResp.Content.ReadAsStreamAsync(ct))
+                using (var fileStream = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true))
                 {
-                    LastError = $"Preuzeti fajl je prazan ili previše mali ({data?.Length ?? 0} bytes)";
+                    await dlStream.CopyToAsync(fileStream, ct);
+                }
+
+                var fi = new System.IO.FileInfo(dest);
+                if (!fi.Exists || fi.Length < 1000)
+                {
+                    LastError = string.Format(L("fs_file_too_small"), fi?.Length ?? 0);
+                    try { File.Delete(dest); } catch { }
                     return null;
                 }
 
-                string name = $"ambient_{Guid.NewGuid().ToString().Substring(0, 8)}.mp3";
-                string dest = Path.Combine(outputDir, name);
-                await File.WriteAllBytesAsync(dest, data, ct);
                 LastError = null;
                 return dest;
             }

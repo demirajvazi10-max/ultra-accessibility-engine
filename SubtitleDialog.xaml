@@ -16,13 +16,13 @@
         <TextBox x:Name="txtText" Grid.Row="1" Height="60" TextWrapping="Wrap" 
                  Background="#1E1E1E" Foreground="White" Margin="0,0,0,15"/>
 
-        <TextBlock Grid.Row="2" Text="Prikaži tokom celog klipa" Foreground="#00E676" 
+        <TextBlock Grid.Row="2" Text="Show for entire clip" Foreground="#00E676" 
                    FontSize="12" Margin="0,0,0,15"/>
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center">
             <Button x:Name="btnOk" Content="✅ POTVRDI" Click="Ok_Click" Width="100" Height="35" 
                     Background="#2E7D32" Foreground="White" Margin="0,0,10,0"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click" Width="100" Height="35" 
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="Cancel_Click" Width="100" Height="35" 
                     Background="#B71C1C" Foreground="White"/>
         </StackPanel>
     </Grid>

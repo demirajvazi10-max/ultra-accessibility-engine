@@ -9,8 +9,20 @@ namespace UltraVideoEditor
 {
     public class OllamaClient
     {
+        // Language helper
+        private static string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         private readonly HttpClient _httpClient;
         private readonly string _ollamaUrl = "http://localhost:11434/api/generate";
+
+        // Statički HttpClient za provjere dostupnosti — sprečava socket exhaustion
+        // kada se IsOllamaRunning poziva 30+ puta po video generisanju
+        private static readonly HttpClient _checkClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
 
         public OllamaClient()
         {
@@ -25,7 +37,7 @@ namespace UltraVideoEditor
                 // Provjeri da li Ollama radi prije slanja zahtjeva
                 if (!await IsOllamaRunning())
                 {
-                    return "Greška: Ollama nije pokrenuta. Molimo pokrenite Ollama komandu u terminalu.";
+                    return L("ol_not_running");
                 }
 
                 var request = new
@@ -55,7 +67,7 @@ namespace UltraVideoEditor
                 }
                 else
                 {
-                    return $"Greška: {response.StatusCode} - {responseBody}";
+                    return LF("ol_status_error", response.StatusCode, responseBody);
                 }
             }
             catch (OperationCanceledException)
@@ -64,7 +76,7 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                return $"Greška: {ex.Message}. Provjerite da li je Ollama pokrenuta (ollama serve) i da li je model {model} instaliran (ollama pull {model}).";
+                return LF("ol_connection_error", ex.Message);
             }
         }
 
@@ -72,9 +84,8 @@ namespace UltraVideoEditor
         {
             try
             {
-                using var testClient = new HttpClient();
-                testClient.Timeout = TimeSpan.FromSeconds(5);
-                var response = await testClient.GetAsync("http://localhost:11434/api/tags");
+                // Koristimo statički _checkClient — ne kreiramo novu instancu pri svakom pozivu
+                var response = await _checkClient.GetAsync("http://localhost:11434/api/tags");
                 return response.IsSuccessStatusCode;
             }
             catch

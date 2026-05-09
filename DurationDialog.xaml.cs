@@ -11,6 +11,11 @@ namespace UltraVideoEditor
 {
     public partial class DurationDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public double Duration { get; private set; }
 
         public DurationDialog(double currentDuration = 5.0)
@@ -48,14 +53,14 @@ namespace UltraVideoEditor
                 }
                 else
                 {
-                    WpfMessageBox.Show("Trajanje mora biti između 0.1 i 3600 sekundi (1 sat)", "Greška",
+                    WpfMessageBox.Show(L("dd_duration_range"), L("error_title"),
                                     MessageBoxButton.OK, MessageBoxImage.Warning);
                     txtDuration.Focus();
                 }
             }
             else
             {
-                WpfMessageBox.Show("Unesite ispravan broj (npr. 5 ili 3.5)", "Greška",
+                WpfMessageBox.Show(L("dd_invalid_number"), L("error_title"),
                                 MessageBoxButton.OK, MessageBoxImage.Warning);
                 txtDuration.Focus();
             }

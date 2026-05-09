@@ -4,7 +4,7 @@
         Title="🎬 Auto-rasporedi slike" Height="1000" Width="600"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         Background="#1E1E1E"
-        AutomationProperties.Name="Dijalog za automatsko raspoređivanje slika">
+        AutomationProperties.Name="Dialog for automatic image arrangement">
 
     <Grid Margin="15">
         <Grid.RowDefinitions>
@@ -53,13 +53,13 @@
                  AutomationProperties.Name="Trajanje odjavnog teksta u sekundama"/>
 
         <!-- Način odabira efekata -->
-        <TextBlock Grid.Row="6" Text="Način odabira efekata:" Foreground="White" Margin="0,5,0,3"/>
+        <TextBlock Grid.Row="6" Text="Effect selection mode:" Foreground="White" Margin="0,5,0,3"/>
         <ComboBox x:Name="cmbEffectMode" Grid.Row="7" Height="30" Background="#2D2D2D" Foreground="White" Margin="0,0,0,10"
                   SelectionChanged="EffectMode_Changed"
-                  AutomationProperties.Name="Odabir načina efekata">
-            <ComboBoxItem Content="🎲 Automatski (ciklično)"/>
-            <ComboBoxItem Content="🎲 Ručno (zadaj listu)"/>
-            <ComboBoxItem Content="🎲 Nasumično (random)"/>
+                  AutomationProperties.Name="Effect mode selection">
+            <ComboBoxItem Content="🎲 Automatic (cyclic)"/>
+            <ComboBoxItem Content="🎲 Manual (define list)"/>
+            <ComboBoxItem Content="🎲 Random"/>
         </ComboBox>
 
         <!-- Lista efekata (ručni unos) -->
@@ -96,8 +96,8 @@
                     </ComboBox>
                     <TextBlock Text="Boja:" Foreground="White" VerticalAlignment="Center" Margin="10,0,10,0"/>
                     <ComboBox x:Name="cmbOverlayColor" Width="100" Height="25" Background="#2D2D2D" Foreground="White" IsEnabled="False">
-                        <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF" IsSelected="True"/>
-                        <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
+                        <ComboBoxItem Content="⚪ White" Tag="#FFFFFF" IsSelected="True"/>
+                        <ComboBoxItem Content="🟡 Yellow" Tag="#FFFF00"/>
                         <ComboBoxItem Content="⚫ Crna" Tag="#000000"/>
                     </ComboBox>
                 </StackPanel>
@@ -116,7 +116,7 @@
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">
-                    <CheckBox x:Name="chkShowLogo" Content="Prikaži logo na početku" 
+                    <CheckBox x:Name="chkShowLogo" Content="Show logo at start" 
                               Foreground="White" IsChecked="False" Margin="0,0,20,0"/>
                     <TextBlock Text="Trajanje loga (s):" Foreground="White" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtLogoDuration" Width="50" Height="25" Text="5" Background="#2D2D2D" Foreground="White" Margin="5,0,0,0"/>
@@ -132,19 +132,19 @@
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                     <TextBlock Text="Najavni tekst:" Foreground="White" Width="100" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtIntroText" Width="300" Height="25" Background="#2D2D2D" Foreground="White" Padding="3"
-                             Text="🎵 Nova dječija pjesmica"/>
+                             Text="🎵 New children's song"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                     <TextBlock Text="Odjavni tekst:" Foreground="White" Width="100" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtOutroText" Width="300" Height="25" Background="#2D2D2D" Foreground="White" Padding="3"
-                             Text="👍 Hvala što ste gledali! 🎵 Pretplatite se!"/>
+                             Text="👍 Thanks for watching! 🎵 Subscribe!"/>
                 </StackPanel>
 
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Ime kanala:" Foreground="White" Width="100" VerticalAlignment="Center"/>
                     <TextBox x:Name="txtChannelName" Width="250" Height="25" Background="#2D2D2D" Foreground="White" Padding="3"
-                             Text="Dječiji Svet"/>
+                             Text="Kids World"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -160,7 +160,7 @@
                         <ComboBoxItem Content="🎬 2560×1440 (2K)" Tag="2560x1440"/>
                         <ComboBoxItem Content="🚀 3840×2160 (4K)" Tag="3840x2160"/>
                     </ComboBox>
-                    <TextBlock Text=" (veća rezolucija = veći fajl)" Foreground="#888" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="10"/>
+                    <TextBlock Text=" (higher resolution = larger file)" Foreground="#888" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="10"/>
                 </StackPanel>
             </StackPanel>
         </Border>
@@ -180,39 +180,39 @@
             <StackPanel>
                 <TextBlock Text="🎬 Profesionalni efekti" Foreground="#00E676" FontWeight="Bold" Margin="0,0,0,8"/>
 
-                <CheckBox x:Name="chkCrossfade" Content="↗ Mekani prelazi (crossfade) između slika" 
+                <CheckBox x:Name="chkCrossfade" Content="↗ Smooth transitions (crossfade) between images" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,5"
-                          AutomationProperties.Name="Uključi mekane prelaze između slika"/>
+                          AutomationProperties.Name="Enable smooth transitions between images"/>
 
                 <CheckBox x:Name="chkKenBurns" Content="🔍 Ken Burns efekat (lagani zoom na slikama)" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,5"
-                          AutomationProperties.Name="Uključi Ken Burns zoom efekat na slikama"/>
+                          AutomationProperties.Name="Enable Ken Burns zoom effect on images"/>
 
                 <CheckBox x:Name="chkTransitionSounds" Content="🔊 Zvukovi pri promjeni scene (pop/whoosh)" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,5"
-                          AutomationProperties.Name="Dodaj zvučne efekte pri prelazu između slika"/>
+                          AutomationProperties.Name="Add sound effects during image transitions"/>
 
                 <CheckBox x:Name="chkAmbientSounds" Content="🌳 Ambijentalni zvukovi (ptice, vjetar, more, djeca)" 
                           Foreground="White" IsChecked="True" Margin="0,0,0,5"
-                          AutomationProperties.Name="Dodaj ambijentalne zvukove prema sadržaju slike"/>
+                          AutomationProperties.Name="Add ambient sounds based on image content"/>
             </StackPanel>
         </Border>
         <!-- FREESOUND API KLJUČ (NOVO) -->
         <Border Grid.Row="16" Background="#2A2A2A" CornerRadius="4" Padding="8" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="🔑 Freesound API ključ (obavezan za zvukove)" Foreground="#FF9800" FontWeight="Bold" Margin="0,0,0,8"/>
+                <TextBlock Text="🔑 Freesound API key (required for sounds)" Foreground="#FF9800" FontWeight="Bold" Margin="0,0,0,8"/>
 
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
                     <PasswordBox x:Name="txtFreesoundKey" Width="350" Height="30" 
                          Background="#2D2D2D" Foreground="White" 
-                         AutomationProperties.Name="Freesound API ključ"/>
+                         AutomationProperties.Name="Freesound API key"/>
                     <Button x:Name="btnGetKey" Content="❓ Kako dobiti?" Click="btnGetKey_Click" 
                     Width="100" Height="30" Background="#2196F3" Foreground="White" Margin="5,0,0,0"/>
                 </StackPanel>
 
-                <TextBlock Text="1. Registrujte se na freesound.org | 2. Idite na apiv2/apply | 3. Zatražite API ključ" 
+                <TextBlock Text="1. Register at freesound.org | 2. Go to apiv2/apply | 3. Request API key" 
                    Foreground="#888888" FontSize="9" TextWrapping="Wrap"/>
-                <TextBlock Text="Ključ je besplatan za ne-komercijalno korištenje (60 zahtjeva/min)" 
+                <TextBlock Text="Key is free for non-commercial use (60 requests/min)" 
                    Foreground="#888888" FontSize="9" Margin="0,2,0,0"/>
             </StackPanel>
         </Border>
@@ -222,7 +222,7 @@
             <Button x:Name="btnApply" Content="🎬 PRIMIJENI" Click="Apply_Click"
                     Width="120" Height="35" Background="#2E7D32" Foreground="White"
                     FontSize="13" FontWeight="Bold" Margin="0,0,10,0"/>
-            <Button x:Name="btnCancel" Content="❌ OTKAŽI" Click="Cancel_Click"
+            <Button x:Name="btnCancel" Content="❌ CANCEL" Click="Cancel_Click"
                     Width="100" Height="35" Background="#B71C1C" Foreground="White"
                     FontSize="13" FontWeight="Bold"/>
         </StackPanel>

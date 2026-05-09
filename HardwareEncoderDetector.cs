@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace UltraVideoEditor
@@ -20,6 +21,8 @@ namespace UltraVideoEditor
     {
         private static string ffmpegPath;
         private static List<HardwareEncoderInfo> _cachedEncoders;
+        // SemaphoreSlim sprečava race condition ako se GetAvailableEncodersAsync pozove paralelno
+        private static readonly SemaphoreSlim _cacheLock = new SemaphoreSlim(1, 1);
 
         static HardwareEncoderDetector()
         {
@@ -31,39 +34,47 @@ namespace UltraVideoEditor
         /// </summary>
         public static async Task<List<HardwareEncoderInfo>> GetAvailableEncodersAsync(string codec = "h264")
         {
+            // Brza provjera bez locka
             if (_cachedEncoders != null)
                 return _cachedEncoders;
 
-            var possibleEncoders = new List<HardwareEncoderInfo>
+            // Lock sprečava duplo testiranje enkodera ako se pozove paralelno
+            await _cacheLock.WaitAsync();
+            try
             {
-                new HardwareEncoderInfo { Name = $"{codec}_nvenc", DisplayName = "NVIDIA NVENC", Priority = 1 },
-                new HardwareEncoderInfo { Name = $"{codec}_qsv", DisplayName = "Intel QuickSync", Priority = 2 },
-                new HardwareEncoderInfo { Name = $"{codec}_amf", DisplayName = "AMD AMF", Priority = 3 },
-                new HardwareEncoderInfo { Name = $"{codec}_vaapi", DisplayName = "VAAPI (Linux/Intel/AMD)", Priority = 4 },
-                new HardwareEncoderInfo { Name = $"{codec}_videotoolbox", DisplayName = "Apple VideoToolbox", Priority = 5 },
-                new HardwareEncoderInfo { Name = $"{codec}_v4l2m2m", DisplayName = "V4L2 M2M (Linux/ARM)", Priority = 6 },
-            };
+                // Ponovna provjera unutar locka (double-checked locking)
+                if (_cachedEncoders != null)
+                    return _cachedEncoders;
 
-            var tempDir = Path.GetTempPath();
-            var testInputFile = Path.Combine(tempDir, "hw_test_input.mp4");
+                var possibleEncoders = new List<HardwareEncoderInfo>
+                {
+                    new HardwareEncoderInfo { Name = $"{codec}_nvenc", DisplayName = "NVIDIA NVENC", Priority = 1 },
+                    new HardwareEncoderInfo { Name = $"{codec}_qsv", DisplayName = "Intel QuickSync", Priority = 2 },
+                    new HardwareEncoderInfo { Name = $"{codec}_amf", DisplayName = "AMD AMF", Priority = 3 },
+                    new HardwareEncoderInfo { Name = $"{codec}_vaapi", DisplayName = "VAAPI (Linux/Intel/AMD)", Priority = 4 },
+                    new HardwareEncoderInfo { Name = $"{codec}_videotoolbox", DisplayName = "Apple VideoToolbox", Priority = 5 },
+                    new HardwareEncoderInfo { Name = $"{codec}_v4l2m2m", DisplayName = "V4L2 M2M (Linux/ARM)", Priority = 6 },
+                };
 
-            // Kreiraj test fajl ako ne postoji
-            if (!File.Exists(testInputFile))
-            {
-                await CreateTestVideoFile(testInputFile);
+                var tempDir = Path.GetTempPath();
+                var testInputFile = Path.Combine(tempDir, "hw_test_input.mp4");
+
+                if (!File.Exists(testInputFile))
+                    await CreateTestVideoFile(testInputFile);
+
+                foreach (var encoder in possibleEncoders)
+                    encoder.IsAvailable = await TestEncoderAsync(encoder.Name, testInputFile);
+
+                _cachedEncoders = possibleEncoders.Where(e => e.IsAvailable).OrderBy(e => e.Priority).ToList();
+
+                try { File.Delete(testInputFile); } catch { }
+
+                return _cachedEncoders;
             }
-
-            foreach (var encoder in possibleEncoders)
+            finally
             {
-                encoder.IsAvailable = await TestEncoderAsync(encoder.Name, testInputFile);
+                _cacheLock.Release();
             }
-
-            _cachedEncoders = possibleEncoders.Where(e => e.IsAvailable).OrderBy(e => e.Priority).ToList();
-
-            // Očisti test fajl
-            try { File.Delete(testInputFile); } catch { }
-
-            return _cachedEncoders;
         }
 
         /// <summary>

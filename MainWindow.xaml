@@ -21,84 +21,84 @@
 
         <Menu Grid.Row="0" Margin="0,0,0,5" Background="#1E1E1E" Foreground="White" AutomationProperties.Name="Glavni meni">
             <MenuItem Header="_Datoteka">
-                <MenuItem Header="_Novi projekat" InputGestureText="Ctrl+N" Click="NewProject_Click"/>
+                <MenuItem Header="_New project" InputGestureText="Ctrl+N" Click="NewProject_Click"/>
                 <MenuItem Header="_Otvori projekat..." InputGestureText="Ctrl+O" Click="LoadProject_Click"/>
                 <Separator/>
-                <MenuItem Header="_Sačuvaj projekat" InputGestureText="Ctrl+S" Click="SaveProject_Click"/>
-                <MenuItem Header="Sačuvaj _kao..." InputGestureText="F12" Click="SaveAsProject_Click"/>
+                <MenuItem Header="_Save project" InputGestureText="Ctrl+S" Click="SaveProject_Click"/>
+                <MenuItem Header="Save _as..." InputGestureText="F12" Click="SaveAsProject_Click"/>
                 <Separator/>
                 <MenuItem Header="_Izvezi video..." InputGestureText="Ctrl+E" Click="FinalRender_Click"/>
                 <MenuItem Header="_Opcije izvoza..." Click="ShowExportOptions_Click"/>
                 <MenuItem Header="📱 Izvezi za Shorts/TikTok/Instagram..." Click="ExportMultiFormat_Click"/>
                 <Separator/>
-                <MenuItem Header="I_zlaz" InputGestureText="Alt+F4" Click="Exit_Click"/>
+                <MenuItem Header="E_xit" InputGestureText="Alt+F4" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Uredi">
-                <MenuItem Header="_Poništi" InputGestureText="Ctrl+Z" Click="Undo_Click"/>
+                <MenuItem Header="_Undo" InputGestureText="Ctrl+Z" Click="Undo_Click"/>
                 <MenuItem Header="_Ponovi" InputGestureText="Ctrl+Y" Click="Redo_Click"/>
                 <Separator/>
-                <MenuItem Header="I_seci" InputGestureText="Ctrl+X" Click="CutClip_Click"/>
-                <MenuItem Header="_Kopiraj" InputGestureText="Ctrl+C" Click="CopyClip_Click"/>
-                <MenuItem Header="_Zalepi" InputGestureText="Ctrl+V" Click="PasteClip_Click"/>
+                <MenuItem Header="C_ut" InputGestureText="Ctrl+X" Click="CutClip_Click"/>
+                <MenuItem Header="_Copy" InputGestureText="Ctrl+C" Click="CopyClip_Click"/>
+                <MenuItem Header="_Paste" InputGestureText="Ctrl+V" Click="PasteClip_Click"/>
                 <Separator/>
-                <MenuItem Header="Iseci na _svim markerima" InputGestureText="Ctrl+Shift+X" Click="CutAtAllMarkers_Click"/>
+                <MenuItem Header="Cut at _all markers" InputGestureText="Ctrl+Shift+X" Click="CutAtAllMarkers_Click"/>
                 <Separator/>
-                <MenuItem Header="_Obriši selektovano" InputGestureText="Del" Click="RemoveFromTimeline_Click"/>
+                <MenuItem Header="_Delete selected" InputGestureText="Del" Click="RemoveFromTimeline_Click"/>
                 <Separator/>
-                <MenuItem Header="Izaberi _sve" InputGestureText="Ctrl+A" Click="SelectAll_Click"/>
+                <MenuItem Header="Select _all" InputGestureText="Ctrl+A" Click="SelectAll_Click"/>
             </MenuItem>
-            <MenuItem Header="_Prikaz">
-                <MenuItem Header="Uvećaj _zoom" InputGestureText="Ctrl++" Click="ZoomIn_Click"/>
-                <MenuItem Header="Umanji _zoom" InputGestureText="Ctrl+-" Click="ZoomOut_Click"/>
+            <MenuItem Header="_View">
+                <MenuItem Header="Zoom _in" InputGestureText="Ctrl++" Click="ZoomIn_Click"/>
+                <MenuItem Header="Zoom _out" InputGestureText="Ctrl+-" Click="ZoomOut_Click"/>
                 <MenuItem Header="_Resetuj zoom" InputGestureText="Ctrl+0" Click="ResetZoom_Click"/>
                 <Separator/>
-                <MenuItem Header="Prikaži _sve trake" Click="ShowAllTracks_Click"/>
-                <MenuItem Header="Prikaži samo _video trake" Click="ShowVideoTracksOnly_Click"/>
-                <MenuItem Header="Prikaži samo _audio trake" Click="ShowAudioTracksOnly_Click"/>
+                <MenuItem Header="Show _all tracks" Click="ShowAllTracks_Click"/>
+                <MenuItem Header="Show _video tracks only" Click="ShowVideoTracksOnly_Click"/>
+                <MenuItem Header="Show _audio tracks only" Click="ShowAudioTracksOnly_Click"/>
                 <Separator/>
-                <MenuItem Header="_Pristupačni mod" InputGestureText="Ctrl+Shift+A" Click="ToggleAccessibilityMode_Click"/>
+                <MenuItem Header="_Accessibility mode" InputGestureText="Ctrl+Shift+A" Click="ToggleAccessibilityMode_Click"/>
                 <MenuItem Header="_Log prozor" InputGestureText="Ctrl+Shift+L" Click="ShowLogWindow_Click"/>
                 <Separator/>
-                <MenuItem Header="_Jezik">
+                <MenuItem Header="_Language">
                     <MenuItem Header="Srpski" Click="SetLanguageSerbian_Click"/>
                     <MenuItem Header="English" Click="SetLanguageEnglish_Click"/>
                     <MenuItem Header="Deutsch" Click="SetLanguageGerman_Click"/>
                 </MenuItem>
                 <MenuItem Header="_Tema">
-                    <MenuItem Header="🌙 Tamna (default)" Click="SetThemeDark_Click"/>
-                    <MenuItem Header="⚡ Visoki kontrast" Click="SetThemeContrast_Click"/>
+                    <MenuItem Header="🌙 Dark (default)" Click="SetThemeDark_Click"/>
+                    <MenuItem Header="⚡ High contrast" Click="SetThemeContrast_Click"/>
                     <MenuItem Header="☀️ Svetla" Click="SetThemeLight_Click"/>
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Vremenska traka">
-                <MenuItem Header="Dodaj _video/sliku..." InputGestureText="Ctrl+I" Click="AddVideoImage_Click"/>
-                <MenuItem Header="Dodaj _audio..." InputGestureText="Ctrl+Shift+I" Click="AddAudioOnly_Click"/>
+                <MenuItem Header="Add _video/image..." InputGestureText="Ctrl+I" Click="AddVideoImage_Click"/>
+                <MenuItem Header="Add _audio..." InputGestureText="Ctrl+Shift+I" Click="AddAudioOnly_Click"/>
                 <Separator/>
-                <MenuItem Header="Dodaj _video traku" Click="AddVideoTrack_Click"/>
-                <MenuItem Header="Dodaj _audio traku" Click="AddAudioTrack_Click"/>
+                <MenuItem Header="Add _video track" Click="AddVideoTrack_Click"/>
+                <MenuItem Header="Add _audio track" Click="AddAudioTrack_Click"/>
                 <Separator/>
-                <MenuItem Header="Pomeri klip _levo" InputGestureText="Ctrl+Left" Click="MoveLeft_Click"/>
-                <MenuItem Header="Pomeri klip _desno" InputGestureText="Ctrl+Right" Click="MoveRight_Click"/>
-                <MenuItem Header="Pomeri klip _gore" InputGestureText="Ctrl+Up" Click="MoveClipUp_Click"/>
-                <MenuItem Header="Pomeri klip _dole" InputGestureText="Ctrl+Down" Click="MoveClipDown_Click"/>
+                <MenuItem Header="Move clip _left" InputGestureText="Ctrl+Left" Click="MoveLeft_Click"/>
+                <MenuItem Header="Move clip _right" InputGestureText="Ctrl+Right" Click="MoveRight_Click"/>
+                <MenuItem Header="Move clip _up" InputGestureText="Ctrl+Up" Click="MoveClipUp_Click"/>
+                <MenuItem Header="Move clip _down" InputGestureText="Ctrl+Down" Click="MoveClipDown_Click"/>
                 <Separator/>
-                <MenuItem Header="Podesi _trajanje klipa..." InputGestureText="Ctrl+D" Click="SetClipDuration_Click"/>
-                <MenuItem Header="Podesi _jačinu zvuka..." InputGestureText="Ctrl+Alt+V" Click="SetClipVolume_Click"/>
+                <MenuItem Header="Set clip _duration..." InputGestureText="Ctrl+D" Click="SetClipDuration_Click"/>
+                <MenuItem Header="Set _volume..." InputGestureText="Ctrl+Alt+V" Click="SetClipVolume_Click"/>
                 <Separator/>
-                <MenuItem Header="Dodaj _marker" InputGestureText="Ctrl+M" Click="AddMarker_Click"/>
-                <MenuItem Header="_Sledeći marker" InputGestureText="Ctrl+Shift+N" Click="NextMarker_Click"/>
-                <MenuItem Header="_Prethodni marker" InputGestureText="Ctrl+Shift+P" Click="PrevMarker_Click"/>
-                <MenuItem Header="Obriši _sve markere" Click="ClearAllMarkers_Click"/>
+                <MenuItem Header="Add _marker" InputGestureText="Ctrl+M" Click="AddMarker_Click"/>
+                <MenuItem Header="_Next marker" InputGestureText="Ctrl+Shift+N" Click="NextMarker_Click"/>
+                <MenuItem Header="_Previous marker" InputGestureText="Ctrl+Shift+P" Click="PrevMarker_Click"/>
+                <MenuItem Header="Clear _all markers" Click="ClearAllMarkers_Click"/>
             </MenuItem>
-            <MenuItem Header="_Veštačka inteligencija">
+            <MenuItem Header="_Artificial intelligence">
                 <MenuItem Header="🎬 Video Engine (AUTO)" Click="OpenVideoEngine_Click" FontWeight="Bold"/>
-                <MenuItem Header="👁 Opisi klipova (Vision AI)..." Click="DescribeAllClips_Click"/>
+                <MenuItem Header="👁 Clip descriptions (Vision AI)..." Click="DescribeAllClips_Click"/>
                 <Separator/>
-                <MenuItem Header="_Generiši glas..." Click="GenerateVoice_Click"/>
-                <MenuItem Header="Generiši _kadrove..." Click="GenerateAI_Click"/>
+                <MenuItem Header="_Generate voice..." Click="GenerateVoice_Click"/>
+                <MenuItem Header="Generate _frames..." Click="GenerateAI_Click"/>
                 <MenuItem Header="_Transkribuj audio..." Click="TranscribeAudio_Click"/>
                 <MenuItem Header="_Sinhronizuj tekst..." Click="SyncLyrics_Click"/>
-                <MenuItem Header="Dodaj _sinhronizovane titlove" Click="AddSyncedSubtitles_Click"/>
+                <MenuItem Header="Add _synchronized subtitles" Click="AddSyncedSubtitles_Click"/>
             </MenuItem>
             <MenuItem Header="_Efekti">
                 <MenuItem Header="_Video efekti" Click="ShowVideoEffectsTab_Click"/>
@@ -106,7 +106,7 @@
                 <MenuItem Header="_Tranzicije" Click="ShowTransitionsTab_Click"/>
                 <MenuItem Header="_Animacije (Keyframe)" Click="ShowAnimationTab_Click"/>
                 <Separator/>
-                <MenuItem Header="Primeni _efekte na selektovano" InputGestureText="Ctrl+Shift+E" Click="ApplyEffects_Click"/>
+                <MenuItem Header="Apply _effects to selected" InputGestureText="Ctrl+Shift+E" Click="ApplyEffects_Click"/>
                 <MenuItem Header="_Resetuj efekte na selektovanom" Click="ResetEffects_Click"/>
             </MenuItem>
             <MenuItem Header="_Alati">
@@ -116,35 +116,35 @@
                 <MenuItem Header="_GPU ubrzanje" IsCheckable="True" IsChecked="True" Click="ToggleGPUAcceleration_Click"/>
                 <MenuItem Header="_Postavke..." Click="ShowPreferences_Click"/>
             </MenuItem>
-            <MenuItem Header="_Pomoć">
-                <MenuItem Header="_Tastaturne prečice" InputGestureText="F1" Click="ShowHelp_Click"/>
-                <MenuItem Header="_Korisničko uputstvo" Click="ShowUserManual_Click"/>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_Keyboard shortcuts" InputGestureText="F1" Click="ShowHelp_Click"/>
+                <MenuItem Header="_User manual" Click="ShowUserManual_Click"/>
                 <Separator/>
-                <MenuItem Header="Provera _ažuriranja" Click="CheckForUpdates_Click"/>
+                <MenuItem Header="Check for _updates" Click="CheckForUpdates_Click"/>
                 <Separator/>
-                <MenuItem Header="_O programu" Click="ShowAbout_Click"/>
+                <MenuItem Header="_About" Click="ShowAbout_Click"/>
             </MenuItem>
         </Menu>
 
         <ToolBar Grid.Row="1" Margin="0,0,0,10" Background="#1E1E1E">
             <Button x:Name="btnNew" Content="📄 Novi" Click="NewProject_Click" ToolTip="Novi projekat (Ctrl+N)"/>
             <Button x:Name="btnOpen" Content="📂 Otvori" Click="LoadProject_Click" ToolTip="Otvori projekat (Ctrl+O)"/>
-            <Button x:Name="btnSave" Content="💾 Sačuvaj" Click="SaveProject_Click" ToolTip="Sačuvaj projekat (Ctrl+S)"/>
+            <Button x:Name="btnSave" Content="💾 Save" Click="SaveProject_Click" ToolTip="Save project (Ctrl+S)"/>
             <Button x:Name="btnPixabay" Content="🔍 PIXABAY" Click="btnPixabay_Click" 
-        Background="#4A148C" Foreground="White" ToolTip="Pretraži i preuzmi slike sa Pixabay-a (besplatno)"/>
+        Background="#4A148C" Foreground="White" ToolTip="Search and download images from Pixabay (free)"/>
             <Button x:Name="btnAIVideoCreator" Content="🤖 AI VIDEO" Click="btnAIVideoCreator_Click" 
         Background="#9C27B0" Foreground="White" ToolTip="AI Video Creator - automatsko kreiranje videa iz teksta pjesme"/>
             <Separator/>
-            <Button x:Name="btnUndoTool" Content="↩️ Poništi" Click="Undo_Click" ToolTip="Poništi (Ctrl+Z)"/>
-            <Button x:Name="btnRedoTool" Content="↪️ Ponovi" Click="Redo_Click" ToolTip="Ponovi (Ctrl+Y)"/>
+            <Button x:Name="btnUndoTool" Content="↩️ Undo" Click="Undo_Click" ToolTip="Undo (Ctrl+Z)"/>
+            <Button x:Name="btnRedoTool" Content="↪️ Redo" Click="Redo_Click" ToolTip="Redo (Ctrl+Y)"/>
             <Separator/>
             <Button x:Name="btnCutTool" Content="✂ Seci" Click="CutClip_Click" ToolTip="Seci (Ctrl+X)"/>
             <Button x:Name="btnCopyTool" Content="📋 Kopiraj" Click="CopyClip_Click" ToolTip="Kopiraj (Ctrl+C)"/>
-            <Button x:Name="btnPasteTool" Content="📌 Zalepi" Click="PasteClip_Click" ToolTip="Zalepi (Ctrl+V)"/>
+            <Button x:Name="btnPasteTool" Content="📌 Paste" Click="PasteClip_Click" ToolTip="Paste (Ctrl+V)"/>
             <Separator/>
-            <Button x:Name="btnDeleteTool" Content="🗑 Obriši" Click="RemoveFromTimeline_Click" ToolTip="Obriši (Del)"/>
+            <Button x:Name="btnDeleteTool" Content="🗑 Delete" Click="RemoveFromTimeline_Click" ToolTip="Delete (Del)"/>
             <Separator/>
-            <Button x:Name="btnAccessibilityTool" Content="♿ Pristupačnost" Click="ToggleAccessibilityMode_Click" ToolTip="Pristupačni mod (Ctrl+Shift+A)"/>
+            <Button x:Name="btnAccessibilityTool" Content="♿ Accessibility" Click="ToggleAccessibilityMode_Click" ToolTip="Accessibility mode (Ctrl+Shift+A)"/>
             <Button x:Name="btnLogTool" Content="📋 Log" Click="ShowLogWindow_Click" ToolTip="Log prozor (Ctrl+Shift+L)"/>
             <Separator/>
             <Button x:Name="btnRenderTool" Content="🎬 RENDER" Click="FinalRender_Click" ToolTip="Renderuj projekat (Ctrl+R)" Background="#B71C1C" Foreground="White"/>
@@ -179,7 +179,7 @@
 
                     <StackPanel Orientation="Horizontal" Grid.Row="0" Margin="0,0,0,10">
                         <Button x:Name="btnMoveLeft" Content="⬅ POMERI LEVO (Ctrl+Left)" Click="MoveLeft_Click" Width="150" Height="32" Background="#4A148C" Foreground="White"/>
-                        <Button x:Name="btnMoveRight" Content="➡ POMERI DESNO (Ctrl+Right)" Click="MoveRight_Click" Width="160" Height="32" Background="#4A148C" Foreground="White" Margin="5,0"/>
+                        <Button x:Name="btnMoveRight" Content="➡ MOVE RIGHT (Ctrl+Right)" Click="MoveRight_Click" Width="160" Height="32" Background="#4A148C" Foreground="White" Margin="5,0"/>
                         <Button x:Name="btnCut" Content="✂ SECI (Ctrl+X)" Click="CutClip_Click" Width="120" Height="32" Background="#FF6F00" Foreground="White" Margin="5,0"/>
                         <Button x:Name="btnCutAllMarkers" Content="✂✂ SECI SVE MARKERE (Ctrl+Shift+X)" Click="CutAtAllMarkers_Click" Width="180" Height="32" Background="#FF6F00" Foreground="White" Margin="5,0"/>
                         <Button x:Name="btnDuration" Content="⏱ TRAJANJE (Ctrl+D)" Click="SetClipDuration_Click" Width="130" Height="32" Background="#FF9800" Foreground="White" Margin="5,0"/>
@@ -195,7 +195,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
-                        <TextBlock x:Name="txtTrackSelector" Text="Prikaži traku:" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock x:Name="txtTrackSelector" Text="Show track:" Foreground="White" VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <ComboBox x:Name="cmbTrackSelector" Width="120" Height="25" SelectionChanged="TrackSelector_Changed" Background="#333" Foreground="White">
                             <ComboBoxItem Content="🎬 Video 1" Tag="0" IsSelected="True"/>
                             <ComboBoxItem Content="🎬 Video 2" Tag="1"/>
@@ -222,7 +222,7 @@
                                     <wf:ColumnHeader Text="Ime klipa" Width="350"/>
                                     <wf:ColumnHeader Text="Tip" Width="60"/>
                                     <wf:ColumnHeader Text="Trajanje" Width="80" TextAlign="Center"/>
-                                    <wf:ColumnHeader Text="Početak" Width="80" TextAlign="Center"/>
+                                    <wf:ColumnHeader Text="Start" Width="80" TextAlign="Center"/>
                                     <wf:ColumnHeader Text="Kraj" Width="80" TextAlign="Center"/>
                                     <wf:ColumnHeader Text="Audio opis" Width="300"/>
                                 </wf:ListView.Columns>
@@ -258,8 +258,8 @@
                                 <TextBlock x:Name="txtAIPromptLabel" Text="Opis slike (odvoji zarezom):" Foreground="White" Margin="0,10,0,5"/>
                                 <TextBox x:Name="txtAIPrompt" Height="60" TextWrapping="Wrap" Padding="10" Background="#2D2D2D" Foreground="White" AcceptsReturn="True" Width="400" AutomationProperties.Name="Polje za unos opisa slike" AutomationProperties.HelpText="Unesite opis slike odvojen zarezom. Koristite Ctrl+V za lepljenje."/>
                                 <Button x:Name="btnPastePrompt" Content="📋 Zalepi" Click="PastePrompt_Click" Width="80" Height="35" Margin="10,0,0,0" Background="#4A148C" Foreground="White" AutomationProperties.Name="Zalepi prompt iz klipborda" AutomationProperties.HelpText="Kliknite da nalepite tekst iz klipborda u polje za opis"/>
-                                <Button x:Name="btnGenerate" Content="🎨 GENERISI AI KADROVE" Click="GenerateAI_Click" Height="40" Margin="0,10" Background="#AA00FF" Foreground="White" FontWeight="Bold" AutomationProperties.Name="Generiši AI kadrove" AutomationProperties.HelpText="Kliknite da generišete slike na osnovu unetog opisa"/>
-                                <Button x:Name="btnPollinations" Content="🌸 POLLINATIONS.AI (besplatno, bez API)" Click="GenerateWithPollinations_Click" Height="40" Margin="0,0,0,10" Background="#006064" Foreground="White" FontWeight="Bold" AutomationProperties.Name="Generisi slike pomocu Pollinations.ai, besplatno, bez API kljuca" AutomationProperties.HelpText="Alternativa za generisanje slika. Ne trazi API kljuc."/>
+                                <Button x:Name="btnGenerate" Content="🎨 GENERATE AI FRAMES" Click="GenerateAI_Click" Height="40" Margin="0,10" Background="#AA00FF" Foreground="White" FontWeight="Bold" AutomationProperties.Name="Generate AI frames" AutomationProperties.HelpText="Click to generate images based on the entered description"/>
+                                <Button x:Name="btnPollinations" Content="🌸 POLLINATIONS.AI (free, no API)" Click="GenerateWithPollinations_Click" Height="40" Margin="0,0,0,10" Background="#006064" Foreground="White" FontWeight="Bold" AutomationProperties.Name="Generate images using Pollinations.ai, free, no API key" AutomationProperties.HelpText="Alternative for image generation. No API key required."/>
                                 <Button x:Name="btnSkiaAnimation" Content="✨ SKIA ANIMACIJA TEKSTA" Click="GenerateSkiaAnimation_Click" Height="40" Margin="0,0,0,10" Background="#1A237E" Foreground="White" FontWeight="Bold" AutomationProperties.Name="Napravi animaciju teksta pomocu SkiaSharp. Odaberi tekst, stil, boje i trajanje." AutomationProperties.HelpText="Kreira animirani video klip sa tvojim tekstom. FadeIn, SlideLeft, Bounce, Stars, Rainbow i drugi stilovi."/>
                                 <ProgressBar x:Name="prgAI" Height="6" Visibility="Collapsed"/>
                                 <TextBlock x:Name="txtAIStatus" Foreground="Yellow"/>
@@ -306,29 +306,29 @@
                         <Slider x:Name="sldBlur" Minimum="0" Maximum="20" Value="0" Margin="0,5,0,15"/>
                         <Separator Margin="0,20"/>
                         <TextBlock x:Name="txtAudioEffects" Text="🎵 AUDIO EFEKTI" FontSize="16" FontWeight="Bold" Foreground="#FF9800"/>
-                        <TextBlock x:Name="txtBass" Text="Bas pojačanje:" Foreground="White"/>
+                        <TextBlock x:Name="txtBass" Text="Bass boost:" Foreground="White"/>
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="sldBass" Minimum="0" Maximum="20" Value="0" Width="200" ValueChanged="AudioEffect_ValueChanged"/>
-                            <Button x:Name="btnPreviewBass" Content="👂 PRESLUŠAJ" Click="PreviewBass_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
+                            <Button x:Name="btnPreviewBass" Content="👂 PREVIEW" Click="PreviewBass_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
                         </StackPanel>
-                        <TextBlock x:Name="txtTreble" Text="Treble pojačanje:" Foreground="White"/>
+                        <TextBlock x:Name="txtTreble" Text="Treble boost:" Foreground="White"/>
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="sldTreble" Minimum="0" Maximum="20" Value="0" Width="200" ValueChanged="AudioEffect_ValueChanged"/>
-                            <Button x:Name="btnPreviewTreble" Content="👂 PRESLUŠAJ" Click="PreviewTreble_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
+                            <Button x:Name="btnPreviewTreble" Content="👂 PREVIEW" Click="PreviewTreble_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
                         </StackPanel>
                         <CheckBox x:Name="chkGPUAcceleration" Content="🎮 GPU ubrzanje" Foreground="White" Margin="0,15" IsChecked="True" Checked="GPUAcceleration_Checked" Unchecked="GPUAcceleration_Checked"/>
                         <TextBlock x:Name="txtReverb" Text="Reverb:" Foreground="White"/>
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="sldReverb" Minimum="0" Maximum="100" Value="0" Width="200" ValueChanged="AudioEffect_ValueChanged"/>
-                            <Button x:Name="btnPreviewReverb" Content="👂 PRESLUŠAJ" Click="PreviewReverb_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
+                            <Button x:Name="btnPreviewReverb" Content="👂 PREVIEW" Click="PreviewReverb_Click" Width="100" Height="25" Margin="10,0" Background="#FF9800" Foreground="White"/>
                         </StackPanel>
-                        <TextBlock x:Name="txtPreviewDuration" Text="Dužina pregleda (sekundi):" Foreground="White" Margin="0,10,0,5"/>
+                        <TextBlock x:Name="txtPreviewDuration" Text="Preview duration (seconds):" Foreground="White" Margin="0,10,0,5"/>
                         <StackPanel Orientation="Horizontal">
                             <Slider x:Name="sldPreviewDuration" Minimum="3" Maximum="30" Value="10" Width="200" TickFrequency="1" TickPlacement="BottomRight"/>
                             <TextBlock x:Name="txtPreviewDurationValue" Text="10 s" Foreground="Yellow" Margin="10,0" VerticalAlignment="Center"/>
                         </StackPanel>
                         <CheckBox x:Name="chkCompressor" Content="Kompresor" Foreground="White" Margin="0,15" Checked="AudioEffect_ValueChanged" Unchecked="AudioEffect_ValueChanged"/>
-                        <Button x:Name="btnApplyEffects" Content="💾 PRIMENI EFEKTE" Click="ApplyEffects_Click" Height="45" Background="#4A148C" Foreground="White" Margin="0,20"/>
+                        <Button x:Name="btnApplyEffects" Content="💾 APPLY EFFECTS" Click="ApplyEffects_Click" Height="45" Background="#4A148C" Foreground="White" Margin="0,20"/>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -344,7 +344,7 @@
                         <TextBlock x:Name="txtSubtitleTextLabel" Text="Tekst titla:" Foreground="White"/>
                         <TextBox x:Name="txtSubtitleText" Height="60" TextWrapping="Wrap" Background="#1E1E1E" Foreground="White" Margin="0,5,0,10"/>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock x:Name="txtSubStartLabel" Text="Početak (s): " Foreground="White" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="txtSubStartLabel" Text="Start (s): " Foreground="White" VerticalAlignment="Center"/>
                             <TextBox x:Name="txtSubStart" Width="80" Text="0" Margin="0,0,20,0"/>
                             <TextBlock x:Name="txtSubEndLabel" Text="Kraj (s): " Foreground="White" VerticalAlignment="Center"/>
                             <TextBox x:Name="txtSubEnd" Width="80" Text="5" Margin="0,0,20,0"/>
@@ -352,7 +352,7 @@
                         </StackPanel>
                     </StackPanel>
                     <ListBox x:Name="lstSubtitles" Grid.Row="1" Background="#1E1E1E" Foreground="White"/>
-                    <Button x:Name="btnClearSubtitles" Content="🗑 OBRIŠI SVE TITLOVE" Click="ClearSubtitles_Click" Background="#B71C1C" Foreground="White" Height="40" Margin="0,10,0,0"/>
+                    <Button x:Name="btnClearSubtitles" Content="🗑 CLEAR ALL SUBTITLES" Click="ClearSubtitles_Click" Background="#B71C1C" Foreground="White" Height="40" Margin="0,10,0,0"/>
                 </Grid>
             </TabItem>
 
@@ -364,7 +364,7 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock x:Name="txtTransitionsInfo" Text="Prevuci efekat između dva klipa na vremenskoj traci" Foreground="#00E676" Margin="0,0,0,10" TextAlignment="Center"/>
+                    <TextBlock x:Name="txtTransitionsInfo" Text="Drag an effect between two clips on the timeline" Foreground="#00E676" Margin="0,0,0,10" TextAlignment="Center"/>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
                         <TextBlock x:Name="txtTransitionDuration" Text="Trajanje efekta (s):" Foreground="White" VerticalAlignment="Center"/>
                         <Slider x:Name="sldTransitionDuration" Minimum="0.5" Maximum="5" Value="1" Width="150" Margin="10,0" TickFrequency="0.5" TickPlacement="BottomRight" ValueChanged="sldTransitionDuration_ValueChanged"/>
@@ -373,12 +373,12 @@
                     <ListBox x:Name="lstTransitions" Grid.Row="2" Background="#1E1E1E" Foreground="White" SelectionChanged="Transition_Selected" Margin="0,0,0,10">
                         <ListBox.ContextMenu>
                             <ContextMenu>
-                                <MenuItem Header="Dodaj između selektovana dva klipa" Click="AddTransitionBetweenSelected_Click"/>
-                                <MenuItem Header="Dodaj između klipova po izboru..." Click="AddTransitionBetweenSpecific_Click"/>
+                                <MenuItem Header="Add between selected two clips" Click="AddTransitionBetweenSelected_Click"/>
+                                <MenuItem Header="Add between specific clips..." Click="AddTransitionBetweenSpecific_Click"/>
                                 <Separator/>
-                                <MenuItem Header="Ukloni tranziciju" Click="RemoveTransition_Click"/>
+                                <MenuItem Header="Remove transition" Click="RemoveTransition_Click"/>
                                 <Separator/>
-                                <MenuItem Header="Podesi trajanje" Click="SetTransitionDuration_Click"/>
+                                <MenuItem Header="Set duration" Click="SetTransitionDuration_Click"/>
                             </ContextMenu>
                         </ListBox.ContextMenu>
                         <ListBox.ItemTemplate>
@@ -391,7 +391,7 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <Button x:Name="btnRemoveTransition" Content="🗑 UKLONI TRANZICIJU" Click="RemoveTransition_Click" Grid.Row="3" Height="35" Background="#B71C1C" Foreground="White"/>
+                    <Button x:Name="btnRemoveTransition" Content="🗑 REMOVE TRANSITION" Click="RemoveTransition_Click" Grid.Row="3" Height="35" Background="#B71C1C" Foreground="White"/>
                 </Grid>
             </TabItem>
 
@@ -416,9 +416,9 @@
                         <ListBox x:Name="lstKeyframes" Width="200" Height="100" Background="#2D2D2D" Foreground="White" SelectionChanged="Keyframe_Selected" Margin="0,0,10,0">
                             <ListBox.ContextMenu>
                                 <ContextMenu>
-                                    <MenuItem Header="Dodaj keyframe na trenutnu poziciju" Click="AddKeyframe_Click" InputGestureText="Ctrl+K"/>
-                                    <MenuItem Header="Ukloni keyframe" Click="RemoveKeyframe_Click" InputGestureText="Ctrl+Shift+K"/>
-                                    <MenuItem Header="Primeni na keyframe" Click="ApplyKeyframe_Click"/>
+                                    <MenuItem Header="Add keyframe at current position" Click="AddKeyframe_Click" InputGestureText="Ctrl+K"/>
+                                    <MenuItem Header="Remove keyframe" Click="RemoveKeyframe_Click" InputGestureText="Ctrl+Shift+K"/>
+                                    <MenuItem Header="Apply to keyframe" Click="ApplyKeyframe_Click"/>
                                     <Separator/>
                                     <MenuItem Header="Postavi zoom" Click="SetZoomKeyframe_Click"/>
                                     <MenuItem Header="Postavi rotaciju" Click="SetRotationKeyframe_Click"/>
@@ -439,19 +439,19 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                         <Button x:Name="btnAddKeyframe" Content="➕ DODAJ" Click="AddKeyframe_Click" Width="80" Height="30" Background="#2E7D32" Foreground="White"/>
-                        <Button x:Name="btnRemoveKeyframe" Content="🗑 UKLONI" Click="RemoveKeyframe_Click" Width="80" Height="30" Background="#B71C1C" Foreground="White" Margin="5,0,0,0"/>
+                        <Button x:Name="btnRemoveKeyframe" Content="🗑 REMOVE" Click="RemoveKeyframe_Click" Width="80" Height="30" Background="#B71C1C" Foreground="White" Margin="5,0,0,0"/>
                     </StackPanel>
 
                     <Border Grid.Row="3" Background="#2D2D2D" CornerRadius="8" Padding="15" Margin="0,0,0,10">
                         <StackPanel>
-                            <TextBlock Text="🤖 AI VODIČ ZA ANIMACIJE" FontSize="14" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,10"/>
-                            <TextBlock Text="Opis željene animacije:" Foreground="White" Margin="0,5,0,5"/>
-                            <TextBox x:Name="txtAnimationPrompt" Height="60" TextWrapping="Wrap" Padding="10" Background="#2D2D2D" Foreground="White" AcceptsReturn="True" AutomationProperties.Name="Polje za opis animacije" AutomationProperties.HelpText="Opišite kakvu animaciju želite da napravite"/>
+                            <TextBlock Text="🤖 AI ANIMATION GUIDE" FontSize="14" FontWeight="Bold" Foreground="#FF9800" Margin="0,0,0,10"/>
+                            <TextBlock Text="Animation description:" Foreground="White" Margin="0,5,0,5"/>
+                            <TextBox x:Name="txtAnimationPrompt" Height="60" TextWrapping="Wrap" Padding="10" Background="#2D2D2D" Foreground="White" AcceptsReturn="True" AutomationProperties.Name="Animation description field" AutomationProperties.HelpText="Describe the animation you want to create"/>
                             <StackPanel Orientation="Horizontal" Margin="0,10">
-                                <Button x:Name="btnGenerateScenario" Content="🔮 Generiši scenario" Click="GenerateScenario_Click" Width="150" Height="35" Background="#4A148C" Foreground="White" Margin="0,0,10,0"/>
-                                <Button x:Name="btnAISuggestLayout" Content="🎲 AI predloži raspored" Click="AISuggestLayout_Click" Width="180" Height="35" Background="#AA00FF" Foreground="White"/>
+                                <Button x:Name="btnGenerateScenario" Content="🔮 Generate scenario" Click="GenerateScenario_Click" Width="150" Height="35" Background="#4A148C" Foreground="White" Margin="0,0,10,0"/>
+                                <Button x:Name="btnAISuggestLayout" Content="🎲 AI suggest layout" Click="AISuggestLayout_Click" Width="180" Height="35" Background="#AA00FF" Foreground="White"/>
                             </StackPanel>
-                            <TextBlock Text="Predlog scenarija (možete mijenjati):" Foreground="White" Margin="0,10,0,5"/>
+                            <TextBlock Text="Scenario proposal (you can edit):" Foreground="White" Margin="0,10,0,5"/>
                             <ListBox x:Name="lstAnimationScenes" Height="150" Background="#1E1E1E" Foreground="White" AutomationProperties.Name="Lista scena za animaciju">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
@@ -473,15 +473,15 @@
                             </ListBox>
                             <StackPanel Orientation="Horizontal" Margin="0,10">
                                 <Button x:Name="btnAddScene" Content="➕ Dodaj scenu" Click="AddScene_Click" Width="100" Margin="0,0,5,0"/>
-                                <Button x:Name="btnRemoveScene" Content="🗑 Obriši scenu" Click="RemoveScene_Click" Width="100" Margin="5,0"/>
+                                <Button x:Name="btnRemoveScene" Content="🗑 Delete scene" Click="RemoveScene_Click" Width="100" Margin="5,0"/>
                                 <Button x:Name="btnMoveSceneUp" Content="🔼 Gore" Click="MoveSceneUp_Click" Width="80" Margin="5,0"/>
-                                <Button x:Name="btnMoveSceneDown" Content="🔽 Dolje" Click="MoveSceneDown_Click" Width="80" Margin="5,0"/>
+                                <Button x:Name="btnMoveSceneDown" Content="🔽 Down" Click="MoveSceneDown_Click" Width="80" Margin="5,0"/>
                             </StackPanel>
-                            <TextBlock Text="Ručno pozicioniranje:" Foreground="White" Margin="0,10,0,5"/>
+                            <TextBlock Text="Manual positioning:" Foreground="White" Margin="0,10,0,5"/>
                             <StackPanel Orientation="Horizontal" Margin="0,5">
-                                <TextBlock Text="Početna sekunda:" Foreground="White" VerticalAlignment="Center"/>
-                                <TextBox x:Name="txtAnimationStartTime" Width="60" Text="0" Margin="5,0" AutomationProperties.Name="Početna pozicija animacije u sekundama"/>
-                                <Button x:Name="btnSetAnimationPosition" Content="📍 POSTAVI ANIMACIJU NA POZICIJU" Click="SetAnimationPosition_Click" Width="220" Height="35" Background="#FF9800" Foreground="White" Margin="10,0,0,0"/>
+                                <TextBlock Text="Start second:" Foreground="White" VerticalAlignment="Center"/>
+                                <TextBox x:Name="txtAnimationStartTime" Width="60" Text="0" Margin="5,0" AutomationProperties.Name="Animation start position in seconds"/>
+                                <Button x:Name="btnSetAnimationPosition" Content="📍 SET ANIMATION POSITION" Click="SetAnimationPosition_Click" Width="220" Height="35" Background="#FF9800" Foreground="White" Margin="10,0,0,0"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -507,8 +507,8 @@
                     </Border>
 
                     <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,10">
-                        <Button x:Name="btnApplyKeyframe" Content="💾 PRIMENI KEYFRAME" Click="ApplyKeyframe_Click" Width="150" Height="35" Background="#FF9800" Foreground="White" Margin="0,0,10,0"/>
-                        <Button x:Name="btnPreviewAnimation" Content="👁️ PREGLEDAJ" Click="PreviewAnimation_Click" Width="120" Height="35" Background="#00BCD4" Foreground="White"/>
+                        <Button x:Name="btnApplyKeyframe" Content="💾 APPLY KEYFRAME" Click="ApplyKeyframe_Click" Width="150" Height="35" Background="#FF9800" Foreground="White" Margin="0,0,10,0"/>
+                        <Button x:Name="btnPreviewAnimation" Content="👁️ PREVIEW" Click="PreviewAnimation_Click" Width="120" Height="35" Background="#00BCD4" Foreground="White"/>
                         <Button x:Name="btnCreateAnimationFromScenes" Content="🎬 NAPRAVI ANIMACIJU" Click="CreateAnimationFromScenes_Click" Width="180" Height="35" Background="#2E7D32" Foreground="White" FontWeight="Bold" Margin="10,0,0,0"/>
                     </StackPanel>
 

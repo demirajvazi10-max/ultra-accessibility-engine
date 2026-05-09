@@ -34,17 +34,17 @@
         <!-- RUČNO POZICIONIRANJE -->
         <Border Grid.Row="3" Background="#2A2A2A" CornerRadius="4" Padding="10" Margin="0,0,0,8">
             <StackPanel>
-                <TextBlock Text="Ručno pozicioniranje:" Foreground="#00E676" FontWeight="Bold" Margin="0,0,0,8"/>
+                <TextBlock Text="Manual positioning:" Foreground="#00E676" FontWeight="Bold" Margin="0,0,0,8"/>
 
-                <TextBlock Text="Početak (sekunda):" Foreground="White" Margin="0,5,0,3"/>
+                <TextBlock Text="Start (second):" Foreground="White" Margin="0,5,0,3"/>
                 <TextBox x:Name="txtStart" Width="100" Height="30" Background="#2D2D2D"
                          Foreground="White" FontSize="14" Padding="5"
-                         AutomationProperties.Name="Početna pozicija u sekundama"/>
+                         AutomationProperties.Name="Start position in seconds"/>
 
                 <TextBlock Text="Kraj (sekunda):" Foreground="White" Margin="0,10,0,3"/>
                 <TextBox x:Name="txtEnd" Width="100" Height="30" Background="#2D2D2D"
                          Foreground="White" FontSize="14" Padding="5"
-                         AutomationProperties.Name="Završna pozicija u sekundama"/>
+                         AutomationProperties.Name="End position in seconds"/>
 
                 <TextBlock Text="Trajanje (sekunde):" Foreground="White" Margin="0,10,0,3"/>
                 <StackPanel Orientation="Horizontal">

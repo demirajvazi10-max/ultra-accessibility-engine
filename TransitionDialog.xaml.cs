@@ -6,6 +6,11 @@ namespace UltraVideoEditor
 {
     public partial class TransitionDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public int ClipIndex { get; private set; }
 
         public TransitionDialog(int totalClips)
@@ -25,7 +30,7 @@ namespace UltraVideoEditor
             }
             else
             {
-                WpfMessageBox.Show("Unesi ispravan broj klipa", "Greška", MessageBoxButton.OK, MessageBoxImage.Warning);
+                WpfMessageBox.Show(L("td_invalid_clip"), L("error_title"), MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

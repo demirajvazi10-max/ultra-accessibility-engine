@@ -18,6 +18,10 @@ namespace UltraVideoEditor
     {
         private string _ffmpegPath;
 
+        private static string _LangCode => (WpfApp.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private static string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private static string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         public RenderEngine(bool useHardwareAcceleration = true)
         {
             _ffmpegPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Ffmpeg", "ffmpeg.exe");
@@ -35,75 +39,72 @@ namespace UltraVideoEditor
             string resolution = "1920x1080",
             bool fastRender = false)
         {
-            LogToMainWindow("RenderEngine: Počinjem renderovanje...");
+            LogToMainWindow(L("re_starting"));
 
-            // Odabir enkodera — NVENC (GPU) je 10-20x brži od libx264 (CPU)
-            // Automatski proveravamo da li je h264_nvenc dostupan na ovom sistemu.
-            // Na testnom laptopu bez NVIDIA pada na CPU automatski.
             bool nvencAvailable = false;
             if (useGPU)
             {
                 try
                 {
-                    // Brza proba — ako NVENC nije dostupan, FFmpeg vraca gresku
                     string testArgs = $"-f lavfi -i color=c=black:s=64x64:d=0.1 -c:v h264_nvenc -f null -";
-                    string testOut  = await RunFFmpegGetOutputAsync(testArgs, CancellationToken.None);
-                    nvencAvailable  = !testOut.Contains("No NVENC capable devices") &&
+                    string testOut = await RunFFmpegGetOutputAsync(testArgs, CancellationToken.None);
+                    nvencAvailable = !testOut.Contains("No NVENC capable devices") &&
                                       !testOut.Contains("Cannot load") &&
                                       !testOut.Contains("Unknown encoder");
                 }
                 catch { nvencAvailable = false; }
             }
 
+            // DODATO ZA WINDOWS MEDIA PLAYER: -pix_fmt yuv420p -profile:v high -level 4.1
             string vEncArgs = nvencAvailable
-                ? "-c:v h264_nvenc -preset p2 -rc vbr -cq 23 -b:v 0"   // NVENC: RTX 2060+ brz
-                : "-c:v libx264 -preset veryfast -crf 23";               // CPU fallback
+                ? "-c:v h264_nvenc -preset p2 -rc vbr -cq 23 -b:v 0 -profile:v high -level 4.1"
+                : "-c:v libx264 -preset veryfast -crf 23 -profile:v high -level 4.1";
             string pixFmt = "-pix_fmt yuv420p";
-            LogToMainWindow($"RenderEngine: Enkoder: {(nvencAvailable ? "h264_nvenc (GPU)" : "libx264 (CPU)")} | FastRender={fastRender}");
+
+            const string TARGET_FPS = "30";
+            const string VSYNC_CFR = "-vsync cfr";
+            string fpsSuffix = $",fps={TARGET_FPS}";
+            LogToMainWindow($"RenderEngine: Enkoder: {(nvencAvailable ? "h264_nvenc (GPU)" : "libx264 (CPU)")} | FastRender={fastRender} | FPS={TARGET_FPS} CFR");
+            vEncArgs_cached = vEncArgs;
 
             if (!File.Exists(_ffmpegPath))
             {
-                LogToMainWindow("RenderEngine: FFmpeg NIJE pronađen!");
-                throw new FileNotFoundException($"FFmpeg nije pronađen: {_ffmpegPath}");
+                LogToMainWindow(L("re_ffmpeg_missing"));
+                throw new FileNotFoundException(LF("re_ffmpeg_path", _ffmpegPath));
             }
 
             var sortedItems = items.OrderBy(i => i.Start).ToList();
 
             LogToMainWindow($"RenderEngine: Ukupno klipova prije filtriranja: {sortedItems.Count}");
 
-            // Loguj sve klipove da vidimo šta imamo
             foreach (var item in sortedItems)
             {
                 LogToMainWindow($"  Klip: Type={item.Type}, Name={item.Name}, Path={(string.IsNullOrEmpty(item.Path) ? "EMPTY" : item.Path)}");
             }
 
-            // Sve slike (uključujući i one sa praznim Path)
             var allImageItems = sortedItems.Where(i => i.Type == "Image").ToList();
             LogToMainWindow($"RenderEngine: Ukupno Image klipova: {allImageItems.Count}");
 
-            // Obične slike (imaju putanju do fajla i nisu tekstualne)
             var images = allImageItems.Where(i =>
                 !string.IsNullOrEmpty(i.Path) &&
                 File.Exists(i.Path) &&
                 !i.Name.Contains("Najavni") &&
                 !i.Name.Contains("Odjavni")).ToList();
 
-            // Tekstualni slojevi (imaju prazan Path ili ime sadrži Najavni/Odjavni)
             var textImages = allImageItems.Where(i =>
                 string.IsNullOrEmpty(i.Path) ||
                 i.Name.Contains("Najavni") ||
                 i.Name.Contains("Odjavni")).ToList();
 
-            // Glavni audio: preferiramo TrackIndex=0, duži klip, ne tranziciju/pop
             var audio = sortedItems
                 .Where(i => (i.Type == "Audio" || i.IsAudio) &&
-                            !i.Name.StartsWith("🔊"))  // isključi tranzicione/pop zvukove
-                .OrderByDescending(i => i.Duration)    // najduži = glavna muzika
+                            !i.Name.StartsWith("🔊"))
+                .OrderByDescending(i => i.Duration)
                 .FirstOrDefault()
                 ?? sortedItems.FirstOrDefault(i => i.Type == "Audio" || i.IsAudio);
             var videos = sortedItems.Where(i => i.Type == "Video" || i.IsVideo).ToList();
 
-            LogToMainWindow($"RenderEngine: Pronađeno {images.Count} slika, {textImages.Count} tekstualnih slojeva, {videos.Count} video klipova");
+            LogToMainWindow(LF("re_found_media", images.Count, textImages.Count, videos.Count));
             LogToMainWindow($"RenderEngine: Odabrana rezolucija: {resolution}");
             LogToMainWindow($"RenderEngine: Sortirano {sortedItems.Count} klipova po vremenskoj liniji");
 
@@ -120,32 +121,25 @@ namespace UltraVideoEditor
 
             try
             {
-                // Jedna petlja po TIMELINE REDOSLEDU (sortedItems je sortiran po Start).
-                // Ranije su bile 3 odvojene petlje (images→text→video) što je narušavalo redosled:
-                // "Odjavni tekst" (textImage) bi završio na poziciji 2 u concat listi, pre svih videa.
-                // Sada svaki item ide u concat.txt tačno na svom mestu po Start poziciji.
                 var videoFiles = new List<string>();
-
-                // Mapa item → tempVideo putanja, za slučaj da neki item padne
                 var itemToFile = new Dictionary<TimelineItem, string>();
 
                 int total = sortedItems.Count(i => i.Type == "Image" || i.Type == "Video" || i.IsVideo || i.IsAudio == false);
                 int current = 0;
-                int fileIdx  = 0; // globalni brojač za jedinstvena imena temp fajlova
+                int fileIdx = 0;
 
                 foreach (var item in sortedItems)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    bool isVideo    = item.Type == "Video" || item.IsVideo;
-                    bool isImage    = item.Type == "Image";
-                    bool isAudio    = item.Type == "Audio" || item.IsAudio;
+                    bool isVideo = item.Type == "Video" || item.IsVideo;
+                    bool isImage = item.Type == "Image";
+                    bool isAudio = item.Type == "Audio" || item.IsAudio;
                     bool isTextItem = isImage && (string.IsNullOrEmpty(item.Path) ||
                                                   item.Name.Contains("Najavni") ||
                                                   item.Name.Contains("Odjavni") ||
                                                   (item.Path != null && !File.Exists(item.Path)));
 
-                    // Audio klipove preskačemo — obrađuju se posebno ispod
                     if (isAudio) continue;
 
                     string tempVideo = Path.Combine(tempDir, $"clip_{fileIdx++:D4}.mp4");
@@ -154,143 +148,197 @@ namespace UltraVideoEditor
 
                     if (isTextItem)
                     {
-                        // ── Tekstualni sloj (najavni/odjavni tekst) ──────────────────
                         string displayText = !string.IsNullOrEmpty(item.Path) && File.Exists(item.Path)
-                            ? ExtractTextFromName(item.Name)   // ima PNG — izvuci ime
-                            : item.Name;                        // nema PNG — koristi Name direktno
+                            ? ExtractTextFromName(item.Name)
+                            : item.Name;
                         LogToMainWindow($"RenderEngine: Tekstualni sloj '{item.Name}' (Start={item.Start:F1}s, trajanje: {item.Duration:F2}s)");
 
                         string escapedText = EscapeText(displayText);
                         int fontSize = item.Name.Contains("Najavni") ? 60 : 34;
 
-                        // Ako postoji PNG slika (CreateTextImage je napravio) — koristi je direktno
                         if (!string.IsNullOrEmpty(item.Path) && File.Exists(item.Path))
                         {
                             string preparedImage = await PrepareImageWithMagick(item.Path, tempDir);
                             if (preparedImage != null)
                             {
-                                string scaleF = $"scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=1,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2";
-                                string argsImg = $"-nostdin -loop 1 -i \"{preparedImage}\" {vEncArgs} -t {durationStr} {pixFmt} -vf \"{scaleF}\" -y \"{tempVideo}\"";
+                                string scaleF = $"scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=1,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2{fpsSuffix}";
+                                string argsImg = $"-nostdin -loop 1 -r {TARGET_FPS} -i \"{preparedImage}\" {vEncArgs} -t {durationStr} {VSYNC_CFR} {pixFmt} -y \"{tempVideo}\"";
                                 success = await RunFFmpegAsync(argsImg, cancellationToken);
                             }
                         }
 
-                        // Fallback: generiši iz teksta direktno
                         if (!success)
                         {
-                            string argsText = $"-nostdin -f lavfi -i color=c=black:s={targetWidth}x{targetHeight}:d={durationStr} " +
-                                              $"-vf \"drawtext=text='{escapedText}':fontcolor=white:fontsize={fontSize}:x=(w-text_w)/2:y=(h-text_h)/2\" " +
-                                              $"{vEncArgs} {pixFmt} -y \"{tempVideo}\"";
-                            LogToMainWindow($"RenderEngine: FFmpeg komanda: {argsText.Substring(0, Math.Min(200, argsText.Length))}...");
+                            string argsText = $"-nostdin -f lavfi -i color=c=black:s={targetWidth}x{targetHeight}:r={TARGET_FPS}:d={durationStr} " +
+                                              $"-vf \"drawtext=text='{escapedText}':fontcolor=white:fontsize={fontSize}:x=(w-text_w)/2:y=(h-text_h)/2{fpsSuffix}\" " +
+                                              $"{vEncArgs} {VSYNC_CFR} {pixFmt} -y \"{tempVideo}\"";
                             success = await RunFFmpegAsync(argsText, cancellationToken);
                         }
                     }
                     else if (isImage)
                     {
-                        // ── Obična slika ─────────────────────────────────────────────
-                        if (!File.Exists(item.Path))
-                        {
-                            LogToMainWindow($"RenderEngine: Slika ne postoji: {item.Path}");
-                            continue;
-                        }
+                        if (!File.Exists(item.Path)) continue;
+
                         string preparedImage = await PrepareImageWithMagick(item.Path, tempDir);
-                        if (preparedImage == null)
-                        {
-                            LogToMainWindow($"RenderEngine: Ne mogu obraditi sliku: {item.Name} – preskačem");
-                            continue;
-                        }
-                        LogToMainWindow($"RenderEngine: Slika '{item.Name}' (Start={item.Start:F1}s, trajanje: {item.Duration:F2}s)");
+                        if (preparedImage == null) continue;
+
                         string scaleF = $"scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=1,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2";
-                        string argsImg = $"-nostdin -loop 1 -i \"{preparedImage}\" {vEncArgs} -t {durationStr} {pixFmt} -vf \"{scaleF}\" -y \"{tempVideo}\"";
+
+                        string fadeFilter = "";
+                        bool isNaslov = item.Name.StartsWith("Naslov:");
+                        bool isOdjava = item.Name == "Odjavni tekst";
+                        double dur = item.Duration;
+
+                        if (isNaslov)
+                        {
+                            fadeFilter = $",fade=t=in:st=0:d=0.8," +
+                                         $"fade=t=out:st={Math.Max(0, dur - 0.5):F2}:d=0.5";
+                        }
+                        else if (isOdjava)
+                        {
+                            fadeFilter = $",fade=t=in:st=0:d=0.5," +
+                                         $"fade=t=out:st={Math.Max(0, dur - 1.5):F2}:d=1.5";
+                        }
+
+                        string imgVf = scaleF + fadeFilter + fpsSuffix;
+                        string argsImg = $"-nostdin -loop 1 -r {TARGET_FPS} -i \"{preparedImage}\" {vEncArgs} -t {durationStr} {VSYNC_CFR} {pixFmt} -vf \"{imgVf}\" -y \"{tempVideo}\"";
                         success = await RunFFmpegAsync(argsImg, cancellationToken);
-                        if (!success) LogToMainWindow($"RenderEngine: FFmpeg neuspješan za sliku {item.Name}");
                     }
                     else if (isVideo)
                     {
-                        // ── Video klip ────────────────────────────────────────────────
-                        if (!File.Exists(item.Path))
-                        {
-                            LogToMainWindow($"RenderEngine: Video ne postoji: {item.Path}");
-                            continue;
-                        }
+                        if (!File.Exists(item.Path)) continue;
 
                         string scaleFilter = $"scale={targetWidth}:{targetHeight}:force_original_aspect_ratio=1,pad={targetWidth}:{targetHeight}:(ow-iw)/2:(oh-ih)/2";
+                        string baseNormalize = "eq=brightness=0.04:saturation=1.1:contrast=1.02,format=yuv420p";
 
-                        // Funkcija 4: Mood color grading — vizuelni ton prema raspoloženju scene
-                        // AudioDescription nosi mood info ako je AI postavio
-                        string moodTag    = item.AudioDescription ?? "";
-                        string moodFilter = AIVideoCreator.GetMoodColorFilter(
-                            ExtractTag(moodTag, "mood"), ExtractTag(moodTag, "context"));
+                        string moodTag = item.AudioDescription ?? "";
+                        string moodFilter = ExtractTag(moodTag, "mood") != "" ? "eq=saturation=1.10:brightness=0.02:contrast=1.03,curves=r='0/0 0.5/0.52 1/1':g='0/0 0.5/0.515 1/1'" : "";
+
                         string videoVf = string.IsNullOrEmpty(moodFilter)
-                            ? scaleFilter
-                            : $"{scaleFilter},{moodFilter}";
+                            ? $"{scaleFilter},{baseNormalize}"
+                            : $"{scaleFilter},{baseNormalize},{moodFilter}";
 
-                        // Ken Burns (Smart Crop) — samo za kratke klipove, i samo ako nije brzi render
+                        int sceneEnergy = 3;
+                        string audioDesc2 = item.AudioDescription ?? "";
+                        var energyMatch = System.Text.RegularExpressions.Regex.Match(audioDesc2, @"energy=(\d+)");
+                        if (energyMatch.Success)
+                        {
+                            int parsed;
+                            if (int.TryParse(energyMatch.Groups[1].Value, out parsed))
+                                sceneEnergy = parsed;
+                        }
+
+                        bool isStaticClip = audioDesc2.Contains("static=1");
+                        double anchorBrightness = -1;
+                        var anchorMatch = System.Text.RegularExpressions.Regex.Match(audioDesc2, @"anchor_brightness=([\d.]+)");
+                        if (anchorMatch.Success && double.TryParse(anchorMatch.Groups[1].Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double abv))
+                            anchorBrightness = abv;
+
+                        double overscanFactor = sceneEnergy >= 4 ? 1.20 : sceneEnergy <= 2 ? 1.10 : 1.15;
+
+                        string warmthBoost;
+                        if (sceneEnergy >= 4)
+                            warmthBoost = "curves=r='0/0 0.5/0.56 1/1':g='0/0 0.5/0.54 1/1'";
+                        else if (sceneEnergy <= 2)
+                            warmthBoost = "curves=r='0/0 0.5/0.52 1/1':g='0/0 0.5/0.515 1/1'";
+                        else
+                            warmthBoost = "curves=r='0/0 0.5/0.54 1/1':g='0/0 0.5/0.525 1/1'";
+
+                        bool needsSlowMoFix = audioDesc2.Contains("slowmo=1");
+                        string fpsNormalize = needsSlowMoFix
+                            ? ",minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me=hexbs:vsbmc=1"
+                            : "";
+
+                        string colorMatchFilter = "";
+                        if (anchorBrightness > 0)
+                        {
+                            double currentBrightness = 0.5;
+                            double delta = Math.Max(-0.12, Math.Min(0.12, anchorBrightness - currentBrightness));
+                            if (Math.Abs(delta) > 0.03)
+                            {
+                                double satAdj = delta > 0 ? 1.05 : 0.97;
+                                colorMatchFilter = $",eq=brightness={delta.ToString("F3", System.Globalization.CultureInfo.InvariantCulture)}:saturation={satAdj.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}";
+                            }
+                        }
+
+                        baseNormalize = $"{baseNormalize},{warmthBoost}";
+                        videoVf = string.IsNullOrEmpty(moodFilter)
+                            ? $"{scaleFilter},{baseNormalize}{colorMatchFilter}{fpsNormalize}"
+                            : $"{scaleFilter},{baseNormalize},{moodFilter}{colorMatchFilter}{fpsNormalize}";
+
                         if (!fastRender)
                         {
                             try
                             {
-                                if (item.Duration <= 8.0)
+                                if (isStaticClip && item.Duration >= 2.0)
                                 {
-                                    var cropReg = await SmartCrop.AnalyzeVideo(item.Path, _ffmpegPath, cancellationToken);
-                                    if (cropReg.Score >= 0.5)
-                                    {
-                                        videoVf = SmartCrop.BuildKenBurnsFilter(
-                                            cropReg, targetWidth, targetHeight,
-                                            1920, 1080, item.Duration, "zoom_in");
-                                        LogToMainWindow($"RenderEngine: Smart crop zona: {cropReg.Zone}");
-                                    }
+                                    int staticFrames = Math.Max(1, (int)(item.Duration * 25.0));
+                                    int overWs = (int)(targetWidth * 1.12);
+                                    int overHs = (int)(targetHeight * 1.12);
+                                    if (overWs % 2 != 0) overWs++;
+                                    if (overHs % 2 != 0) overHs++;
+                                    int midXs = (overWs - targetWidth) / 2;
+                                    int midYs = (overHs - targetHeight) / 2;
+                                    string staticKB = $"scale={overWs}:{overHs}:flags=lanczos," +
+                                                      $"crop={targetWidth}:{targetHeight}:" +
+                                                      $"{midXs}*n/{staticFrames}:{midYs}*n/{staticFrames}";
+                                    videoVf = string.IsNullOrEmpty(moodFilter)
+                                        ? $"{staticKB},{baseNormalize}{colorMatchFilter}"
+                                        : $"{staticKB},{baseNormalize},{moodFilter}{colorMatchFilter}";
+                                }
+
+                                if (item.Duration >= 3.0 && item.Duration <= 12.0 && !isStaticClip)
+                                {
+                                    int overW = (int)(targetWidth * overscanFactor);
+                                    int overH = (int)(targetHeight * overscanFactor);
+                                    if (overW % 2 != 0) overW++;
+                                    if (overH % 2 != 0) overH++;
+
+                                    int frames = Math.Max(1, (int)(item.Duration * 25.0));
+                                    int maxX = overW - targetWidth;
+                                    int maxY = overH - targetHeight;
+                                    int midX = maxX / 2;
+                                    int midY = maxY / 2;
+
+                                    string zone = "center";
+                                    string xExpr = $"{midX}";
+                                    string yExpr = $"{midY}";
+
+                                    string kenBurnsGpu =
+                                        $"scale={overW}:{overH}:flags=lanczos," +
+                                        $"crop={targetWidth}:{targetHeight}:{xExpr}:{yExpr}";
+
+                                    videoVf = kenBurnsGpu;
                                 }
                             }
-                            catch { /* Smart crop nije kritičan */ }
-                        }
-                        else
-                        {
-                            LogToMainWindow($"RenderEngine: ⚡ Brzi render — Ken Burns preskočen za '{Path.GetFileName(item.Path)}'");
+                            catch { }
                         }
 
-                        LogToMainWindow($"RenderEngine: Obrada videa '{Path.GetFileName(item.Path)}' (Start={item.Start:F1}s, trajanje: {item.Duration:F2}s)");
-
-                        // ── KRITIČNO: -stream_loop -1 i zoompan su nekompatibilni ─────────────
-                        // Sa -stream_loop -1, FFmpeg prima beskonačan ulazni stream.
-                        // trim filter u teoriji zastavlja čitanje, ali u praksi FFmpeg
-                        // mora da dekoduje i buffer-uje frejmove jer stream nema "kraj".
-                        // Rezultat: 5s zoompan klip traje 10+ minuta jer se procesira
-                        // stotine sekundi ulaza.
-                        //
-                        // REŠENJE:
-                        // 1. Zoompan → bez -stream_loop, koristimo loop VF filter unutar pipeline-a.
-                        //    FFmpeg tada zna tačan kraj streama i zoompan staje na d={frames}.
-                        // 2. Obični klip → -stream_loop -1 kao i ranije, brzo i pouzdano.
                         bool isZoompan = videoVf.Contains("zoompan");
                         string argsVid;
 
                         if (isZoompan)
                         {
-                            // loop=loop=-1:size=32767:start=0 loopuje video unutar VF grafa
-                            // Ovo je dramatično brže — FFmpeg zna tačan kraj ulaznog streama
-                            string loopedVf = $"loop=loop=-1:size=32767:start=0,{videoVf}";
-                            argsVid = $"-nostdin -t {durationStr} -i \"{item.Path}\" -vf \"{loopedVf}\" {vEncArgs} {pixFmt} -an -y \"{tempVideo}\"";
+                            argsVid = $"-nostdin -t {durationStr} -i \"{item.Path}\" -vf \"{videoVf}{fpsSuffix}\" {vEncArgs} {VSYNC_CFR} {pixFmt} -an -y \"{tempVideo}\"";
                         }
                         else
                         {
-                            // Obični klipovi: -stream_loop -1 sa -t kao i pre
-                            argsVid = $"-nostdin -stream_loop -1 -t {durationStr} -i \"{item.Path}\" -vf \"{videoVf}\" {vEncArgs} {pixFmt} -an -y \"{tempVideo}\"";
+                            argsVid = $"-nostdin -stream_loop -1 -t {durationStr} -i \"{item.Path}\" -vf \"{videoVf}{fpsSuffix}\" {vEncArgs} {VSYNC_CFR} {pixFmt} -an -y \"{tempVideo}\"";
                         }
 
                         success = await RunFFmpegAsync(argsVid, cancellationToken);
-                        if (!success) LogToMainWindow($"RenderEngine: FFmpeg neuspešan za video {item.Name}");
                     }
                     else
                     {
-                        continue; // nepoznat tip — preskoči
+                        continue;
                     }
 
                     if (success)
                     {
                         videoFiles.Add(tempVideo);
                         itemToFile[item] = tempVideo;
-                        LogToMainWindow($"RenderEngine: ✅ clip_{fileIdx - 1:D4} → {item.Name.Substring(0, Math.Min(40, item.Name.Length))} (Start={item.Start:F1}s)");
                     }
 
                     current++;
@@ -298,13 +346,28 @@ namespace UltraVideoEditor
                 }
 
                 if (videoFiles.Count == 0)
-                    throw new Exception("Nijedna slika, tekst ili video nije uspešno konvertovan");
+                    throw new Exception(L("re_no_media"));
 
                 string concatFile = Path.Combine(tempDir, "concat.txt");
                 using (var sw = new StreamWriter(concatFile, false, new UTF8Encoding(false)))
                 {
                     foreach (var vf in videoFiles)
                         await sw.WriteLineAsync($"file '{vf.Replace("\\", "/")}'");
+                }
+
+                string crossfadedVideo = null;
+                if (videoFiles.Count > 1)
+                {
+                    try
+                    {
+                        crossfadedVideo = Path.Combine(tempDir, "crossfaded.mp4");
+                        crossfadedVideo = await ApplyCrossfade(videoFiles, crossfadedVideo, 0.3, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogToMainWindow(LF("re_crossfade_fail", ex.Message));
+                        crossfadedVideo = null;
+                    }
                 }
 
                 string finalOutput = outputPath;
@@ -315,58 +378,30 @@ namespace UltraVideoEditor
                     string tempAudioPath = Path.Combine(tempDir, "audio" + Path.GetExtension(audio.Path));
                     File.Copy(audio.Path, tempAudioPath, true);
 
-                    // Provjeri da li postoji ambient zvuk za miksovanje (legacy)
                     var ambientItem = items.FirstOrDefault(i =>
                         !string.IsNullOrEmpty(i.AmbientSoundPath) &&
                         File.Exists(i.AmbientSoundPath));
 
                     if (ambientItem != null)
                     {
-                        LogToMainWindow("RenderEngine: Primjenjujem audio ducking...");
                         string mixedAudio = Path.Combine(tempDir, "mixed_audio.aac");
-                        string mixedPath;
-
-                        mixedPath = await AudioDucking.ApplyDucking(
-                            tempAudioPath,
-                            ambientItem.AmbientSoundPath,
-                            audio.Duration,
-                            mixedAudio,
-                            _ffmpegPath,
-                            cancellationToken);
-
-                        if (mixedPath == tempAudioPath)
-                        {
-                            LogToMainWindow("RenderEngine: Ducking fallback - koristim jednostavan mix...");
-                            string mixedAudio2 = Path.Combine(tempDir, "mixed_audio2.aac");
-                            mixedPath = await AudioDucking.ApplySimpleDucking(
-                                tempAudioPath,
-                                ambientItem.AmbientSoundPath,
-                                audio.Duration,
-                                mixedAudio2,
-                                _ffmpegPath,
-                                cancellationToken);
-                        }
+                        string mixedPath = tempAudioPath;
                         tempAudioPath = mixedPath;
                     }
 
-                    // Prikupi sve sekundarne Audio klipove (tranzicije, pop zvukovi)
-                    // Oni su na TrackIndex=1 ili imaju ime koje počinje sa 🔊
                     var secondaryAudioClips = sortedItems
                         .Where(i => i.Type == "Audio" &&
                                     i != audio &&
                                     !string.IsNullOrEmpty(i.Path) &&
                                     File.Exists(i.Path))
                         .OrderBy(i => i.Start)
-                        // Deduplikacija: ako postoji više zvukova na istoj poziciji (±0.05s), zadrži samo prvi
                         .GroupBy(i => Math.Round(i.Start, 1))
                         .Select(g => g.First())
-                        // Sigurnosni limit: max 50 sekundarnih klipova (FFmpeg ograničenje args)
                         .Take(50)
                         .ToList();
 
                     if (secondaryAudioClips.Count > 0)
                     {
-                        LogToMainWindow($"RenderEngine: Miksam {secondaryAudioClips.Count} tranzicionih zvukova u audio...");
                         string mixedWithTransitions = Path.Combine(tempDir, "audio_with_transitions.aac");
                         string mixResult = await MixSecondaryAudioClips(
                             tempAudioPath,
@@ -376,46 +411,67 @@ namespace UltraVideoEditor
                         if (mixResult != null)
                         {
                             tempAudioPath = mixResult;
-                            LogToMainWindow("RenderEngine: Tranzicioni zvukovi uspješno umiksani.");
-                        }
-                        else
-                        {
-                            LogToMainWindow("RenderEngine: Miksanje tranzicija neuspješno, koristim samo głównu muziku.");
                         }
                     }
 
-                    LogToMainWindow($"RenderEngine: Dodajem audio: {Path.GetFileName(audio.Path)} (trajanje: {audio.Duration:F2}s)");
-
-                    // Funkcija 3: Karaoke subtitle burn-in
-                    // Ako postoje titlovi, upalimo ih direktno u video (ASS format, žuti tekst + crna senka)
                     string subtitleFile = await CreateSubtitlesFile(subtitles, tempDir);
                     if (!string.IsNullOrEmpty(subtitleFile) && File.Exists(subtitleFile))
                     {
-                        // Mora re-encode video da bi upalili subtitle
-                        // Koristimo libx264 veryfast — jedini siguran način za burn-in
                         string escapedSub = subtitleFile.Replace("\\", "/").Replace(":", "\\:");
-                        LogToMainWindow($"RenderEngine: 🎤 Subtitle burn-in: {Path.GetFileName(subtitleFile)}");
+                        // DODATO ZA WINDOWS MEDIA PLAYER: -pix_fmt yuv420p -profile:v high -level 4.1
                         argsFinal = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" -i \"{tempAudioPath}\" " +
                                     $"-vf \"subtitles='{escapedSub}':force_style='FontSize=22,PrimaryColour=&H00FFFF00,OutlineColour=&H00000000,Outline=2,Shadow=1,Alignment=2'\" " +
-                                    $"-c:v libx264 -preset veryfast -crf 20 -c:a aac -map 0:v -map 1:a -shortest -y \"{finalOutput}\"";
+                                    $"-c:v libx264 -preset veryfast -crf 20 -profile:v high -level 4.1 -pix_fmt yuv420p -c:a aac -map 0:v -map 1:a -shortest -y \"{finalOutput}\"";
                     }
                     else
                     {
-                        argsFinal = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" -i \"{tempAudioPath}\" -c:v copy -c:a aac -map 0:v -map 1:a -shortest -y \"{finalOutput}\"";
+                        if (crossfadedVideo != null && File.Exists(crossfadedVideo))
+                            argsFinal = $"-nostdin -i \"{crossfadedVideo}\" -i \"{tempAudioPath}\" -c:v copy -c:a aac -map 0:v -map 1:a -shortest -y \"{finalOutput}\"";
+                        else
+                            argsFinal = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" -i \"{tempAudioPath}\" -c:v copy -c:a aac -map 0:v -map 1:a -shortest -y \"{finalOutput}\"";
                     }
                 }
                 else
                 {
-                    argsFinal = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" -c:v copy -y \"{finalOutput}\"";
+                    if (crossfadedVideo != null && File.Exists(crossfadedVideo))
+                        argsFinal = $"-nostdin -i \"{crossfadedVideo}\" -c:v copy -y \"{finalOutput}\"";
+                    else
+                        argsFinal = $"-nostdin -f concat -safe 0 -i \"{concatFile}\" -c:v copy -y \"{finalOutput}\"";
                 }
 
-                LogToMainWindow("RenderEngine: Pokrećem finalnu konkatenaciju...");
                 await RunFFmpegAsync(argsFinal, cancellationToken);
 
-                progress?.Report(100);
+                if (File.Exists(finalOutput))
+                {
+                    string postOutput = finalOutput.Replace(".mp4", "_post.mp4");
+                    try
+                    {
+                        double finalDur = await GetVideoDuration(finalOutput, cancellationToken);
+                        if (finalDur > 4.0)
+                        {
+                            double fadeStart = Math.Max(0, finalDur - 2.0);
+                            string fadeStartStr = fadeStart.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
 
-                long fileSize = new FileInfo(finalOutput).Length;
-                LogToMainWindow($"RenderEngine: Renderovanje uspešno završeno! Veličina: {fileSize / 1024 / 1024} MB");
+                            // DODATO ZA WINDOWS MEDIA PLAYER
+                            string encArgsPost = vEncArgs_cached ?? "-c:v libx264 -preset veryfast -crf 23 -profile:v high -level 4.1";
+                            string postArgs = "-nostdin -i \"" + finalOutput + "\" " +
+                                "-vf \"fade=t=out:st=" + fadeStartStr + ":d=2," +
+                                "colorchannelmixer=rr=1:rb=-0.02:gr=0:gg=1:gb=-0.02:br=-0.03:bg=-0.03:bb=1.06\" " +
+                                "-af \"afade=t=out:st=" + fadeStartStr + ":d=2\" " +
+                                $"{encArgsPost} -pix_fmt yuv420p -c:a aac -y \"{postOutput}\"";
+
+                            bool postOk = await RunFFmpegAsync(postArgs, cancellationToken);
+                            if (postOk && File.Exists(postOutput) && new FileInfo(postOutput).Length > 100_000)
+                            {
+                                File.Delete(finalOutput);
+                                File.Move(postOutput, finalOutput);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                progress?.Report(100);
             }
             finally
             {
@@ -423,17 +479,64 @@ namespace UltraVideoEditor
                 {
                     if (Directory.Exists(tempDir))
                         Directory.Delete(tempDir, true);
-                    LogToMainWindow($"RenderEngine: Privremeni folder očišćen");
                 }
                 catch { }
             }
         }
 
-        /// <summary>
-        /// Miksuje sekundarne audio klipove (tranzicioni zvukovi, pop efekti) sa glavnim audiom.
-        /// Koristi sekvencijalno miksovanje u batch-evima od 8.
-        /// ISPRAVAN REDOSLED FILTERA: adelay → atrim (ne obrnuto!)
-        /// </summary>
+        private async Task<double> GetVideoDuration(string videoPath, CancellationToken ct)
+        {
+            try
+            {
+                string probePath = _ffmpegPath.Replace("ffmpeg.exe", "ffprobe.exe");
+                if (File.Exists(probePath))
+                {
+                    string dArgs = "-v error -select_streams v:0 -show_entries stream=duration -of default=noprint_wrappers=1:nokey=1 \"" + videoPath + "\"";
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = probePath,
+                        Arguments = dArgs,
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    using var proc = System.Diagnostics.Process.Start(psi);
+                    var probeSo = proc.StandardOutput.ReadToEndAsync();
+                    var probeSe = proc.StandardError.ReadToEndAsync();
+                    await Task.WhenAll(probeSo, probeSe);
+                    await proc.WaitForExitAsync(ct);
+                    string output = probeSo.Result;
+                    if (double.TryParse(output.Trim(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out double d))
+                        return d;
+                }
+
+                var psi2 = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = _ffmpegPath,
+                    Arguments = "-nostdin -i \"" + videoPath + "\" -f null -",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using var proc2 = System.Diagnostics.Process.Start(psi2);
+                var _re1so = proc2.StandardOutput.ReadToEndAsync();
+                var _re1se = proc2.StandardError.ReadToEndAsync();
+                await Task.WhenAll(_re1so, _re1se);
+                await proc2.WaitForExitAsync(ct);
+                string stderr = _re1se.Result;
+                var m = System.Text.RegularExpressions.Regex.Match(stderr, @"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})");
+                if (m.Success)
+                    return int.Parse(m.Groups[1].Value) * 3600
+                         + int.Parse(m.Groups[2].Value) * 60
+                         + double.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch { }
+            return 0.0;
+        }
+
         private async Task<string> MixSecondaryAudioClips(
             string mainAudioPath,
             List<TimelineItem> secondaryClips,
@@ -474,12 +577,6 @@ namespace UltraVideoEditor
                         double vol = Math.Max(0.5, Math.Min(clip.Volume / 100.0 * 2.0, 4.0));
                         double clipDur = Math.Max(0.05, clip.Duration > 0 ? clip.Duration : 0.5);
 
-                        // ISPRAVAN REDOSLED:
-                        // 1. adelay — pomjeri zvuk na tačnu poziciju u timeline-u
-                        // 2. atrim — odsijeci sve iza clipDur sekundi od POČETKA streama
-                        //    (ne od 0, jer je stream već pomjeren adelay-om)
-                        // 3. volume — pojačaj
-                        // Napomena: atrim=end_sample mora biti u apsolutnom vremenu (pos+dur)
                         double trimEnd = clip.Start + clipDur;
                         filterParts.Add(
                             $"[{idx}:a]" +
@@ -498,25 +595,19 @@ namespace UltraVideoEditor
                     string args = $"-nostdin {inputs}-filter_complex \"{filterComplex}\" " +
                                   $"-map \"[aout]\" -c:a aac -b:a 192k -y \"{batchOutput}\"";
 
-                    LogToMainWindow($"RenderEngine: FFmpeg komanda: {args.Substring(0, Math.Min(args.Length, 200))}...");
                     bool ok = await RunFFmpegAsync(args, ct);
 
                     if (!ok || !File.Exists(batchOutput) || new FileInfo(batchOutput).Length < 1000)
                     {
-                        LogToMainWindow($"RenderEngine: ⚠️ Batch {batchNum} neuspješan (filesize={( File.Exists(batchOutput) ? new FileInfo(batchOutput).Length : 0)}), preskačem.");
-                        // Ne mijenjamo currentAudio — nastavljamo s prethodnim
                         continue;
                     }
 
-                    // Obriši prethodni temp fajl (ne originalni)
                     if (currentAudio != mainAudioPath && File.Exists(currentAudio))
                         try { File.Delete(currentAudio); } catch { }
 
                     currentAudio = batchOutput;
-                    LogToMainWindow($"RenderEngine: ✅ Batch {batchNum} uspješan → {Path.GetFileName(batchOutput)}");
                 }
 
-                // Ako output nije bio posljednji batch, kopiraj currentAudio na outputPath
                 if (currentAudio != outputPath && File.Exists(currentAudio))
                     File.Copy(currentAudio, outputPath, true);
 
@@ -525,30 +616,28 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                LogToMainWindow($"RenderEngine: Greška pri miksanju: {ex.Message}");
+                LogToMainWindow(LF("re_mix_error", ex.Message));
                 return null;
             }
         }
 
         private string ExtractTextFromName(string name)
         {
-            // Iz imena fajla izvlači tekst (npr. "Najavni tekst: 🎵 Nova pjesmica" -> "🎵 Nova pjesmica")
             if (name.Contains(":"))
             {
                 return name.Substring(name.IndexOf(':') + 1).Trim();
             }
-            // Ukloni "Najavni tekst: " ili "Odjavni tekst: " prefiks ako postoji
             if (name.StartsWith("Najavni tekst:"))
                 return name.Substring("Najavni tekst:".Length).Trim();
             if (name.StartsWith("Odjavni tekst:"))
                 return name.Substring("Odjavni tekst:".Length).Trim();
             return name;
         }
+
         private string EscapeText(string text)
         {
             if (string.IsNullOrEmpty(text)) return "";
 
-            // Ukloni ili zamijeni problematične karaktere za FFmpeg drawtext
             string result = text
                 .Replace("\\", "\\\\\\\\")
                 .Replace("'", "'\\\\\\''")
@@ -588,12 +677,11 @@ namespace UltraVideoEditor
                         index++;
                     }
                 }
-                LogToMainWindow($"RenderEngine: Kreirano {subtitles.Count} titlova");
                 return srtFile;
             }
             catch (Exception ex)
             {
-                LogToMainWindow($"RenderEngine: Greška pri kreiranju titlova: {ex.Message}");
+                LogToMainWindow(LF("re_subtitle_error", ex.Message));
                 return null;
             }
         }
@@ -620,15 +708,13 @@ namespace UltraVideoEditor
             }
             catch (Exception ex)
             {
-                LogToMainWindow($"RenderEngine: Magick.NET ne može učitati {imagePath}: {ex.Message}");
+                LogToMainWindow(LF("re_magick_error", imagePath, ex.Message));
                 return null;
             }
         }
 
         private async Task<bool> RunFFmpegAsync(string arguments, CancellationToken ct)
         {
-            LogToMainWindow($"RenderEngine: FFmpeg komanda: {arguments.Substring(0, Math.Min(200, arguments.Length))}...");
-
             var process = new Process
             {
                 StartInfo = new ProcessStartInfo
@@ -659,11 +745,9 @@ namespace UltraVideoEditor
             try
             {
                 await process.WaitForExitAsync(ct);
-                LogToMainWindow($"RenderEngine: FFmpeg završen, exit code: {process.ExitCode}");
 
                 if (process.ExitCode != 0)
                 {
-                    LogToMainWindow($"RenderEngine: FFmpeg greška: {errorBuilder.ToString()}");
                     return false;
                 }
                 return true;
@@ -671,12 +755,10 @@ namespace UltraVideoEditor
             catch (OperationCanceledException)
             {
                 try { process.Kill(); } catch { }
-                LogToMainWindow($"RenderEngine: Operacija otkazana");
                 return false;
             }
             catch (Exception ex)
             {
-                LogToMainWindow($"RenderEngine: Izuzetak: {ex.Message}");
                 return false;
             }
         }
@@ -687,13 +769,13 @@ namespace UltraVideoEditor
             {
                 StartInfo = new ProcessStartInfo
                 {
-                    FileName        = _ffmpegPath,
-                    Arguments       = arguments,
-                    CreateNoWindow  = true,
+                    FileName = _ffmpegPath,
+                    Arguments = arguments,
+                    CreateNoWindow = true,
                     UseShellExecute = false,
-                    RedirectStandardError  = true,
+                    RedirectStandardError = true,
                     RedirectStandardOutput = true,
-                    RedirectStandardInput  = true,
+                    RedirectStandardInput = true,
                     WorkingDirectory = Path.GetTempPath()
                 }
             };
@@ -701,14 +783,16 @@ namespace UltraVideoEditor
             process.Start();
             process.StandardInput.Close();
 
-            string stderr = await process.StandardError.ReadToEndAsync();
-            string stdout = await process.StandardOutput.ReadToEndAsync();
+            var _re3so = process.StandardOutput.ReadToEndAsync();
+            var _re3se = process.StandardError.ReadToEndAsync();
+            await Task.WhenAll(_re3so, _re3se);
             await process.WaitForExitAsync(ct);
+            string stderr = _re3se.Result;
+            string stdout = _re3so.Result;
 
             return stderr + stdout;
         }
 
-        /// <summary>Parsira tag iz AudioDescription stringa: "mood:happy|context:music"</summary>
         private static string ExtractTag(string text, string key)
         {
             if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(key)) return "";
@@ -720,6 +804,122 @@ namespace UltraVideoEditor
             }
             return "";
         }
+
+        private async Task<string> ApplyCrossfade(
+            List<string> videoFiles,
+            string outputPath,
+            double fadeDuration,
+            CancellationToken ct)
+        {
+            if (videoFiles.Count < 2) return null;
+
+            var durations = new List<double>();
+            foreach (var vf in videoFiles)
+            {
+                double dur = 5.0;
+                try
+                {
+                    string probePath = _ffmpegPath.Replace("ffmpeg.exe", "ffprobe.exe");
+                    bool useProbe = File.Exists(probePath);
+
+                    if (useProbe)
+                    {
+                        string dArgs = $"-v error -select_streams v:0 " +
+                                       $"-show_entries stream=duration " +
+                                       $"-of default=noprint_wrappers=1:nokey=1 " +
+                                       $"\"{vf}\"";
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = probePath,
+                            Arguments = dArgs,
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        using var proc = System.Diagnostics.Process.Start(psi);
+                        var probeSo2 = proc.StandardOutput.ReadToEndAsync();
+                        var probeSe2 = proc.StandardError.ReadToEndAsync();
+                        await Task.WhenAll(probeSo2, probeSe2);
+                        await proc.WaitForExitAsync(ct);
+                        string output = probeSo2.Result;
+                        if (double.TryParse(output.Trim(),
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out double d))
+                            dur = d;
+                    }
+                    else
+                    {
+                        var psi = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = _ffmpegPath,
+                            Arguments = $"-nostdin -i \"{vf}\" -f null -",
+                            CreateNoWindow = true,
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            RedirectStandardError = true
+                        };
+                        using var proc = System.Diagnostics.Process.Start(psi);
+                        var _re4so = proc.StandardOutput.ReadToEndAsync();
+                        var _re4se = proc.StandardError.ReadToEndAsync();
+                        await Task.WhenAll(_re4so, _re4se);
+                        await proc.WaitForExitAsync(ct);
+                        string stderr = _re4se.Result;
+                        var m = System.Text.RegularExpressions.Regex.Match(
+                            stderr, @"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})");
+                        if (m.Success)
+                        {
+                            dur = int.Parse(m.Groups[1].Value) * 3600
+                                + int.Parse(m.Groups[2].Value) * 60
+                                + double.Parse(m.Groups[3].Value,
+                                    System.Globalization.CultureInfo.InvariantCulture);
+                        }
+                    }
+                }
+                catch { }
+                durations.Add(dur);
+            }
+
+            var inputs = new System.Text.StringBuilder();
+            var filterParts = new System.Text.StringBuilder();
+            double runningOffset = 0;
+            string lastLabel = "0:v";
+
+            for (int i = 0; i < videoFiles.Count; i++)
+                inputs.Append($"-i \"{videoFiles[i]}\" ");
+
+            for (int i = 1; i < videoFiles.Count; i++)
+            {
+                runningOffset += durations[i - 1] - fadeDuration;
+                string outLabel = (i == videoFiles.Count - 1) ? "vout" : $"v{i}";
+                string offsetStr = runningOffset.ToString("F3",
+                    System.Globalization.CultureInfo.InvariantCulture);
+                string fadeStr = fadeDuration.ToString("F3",
+                    System.Globalization.CultureInfo.InvariantCulture);
+
+                filterParts.Append(
+                    $"[{lastLabel}][{i}:v]xfade=transition=fade:" +
+                    $"duration={fadeStr}:offset={offsetStr}[{outLabel}];");
+                lastLabel = outLabel;
+            }
+
+            string filterComplex = filterParts.ToString().TrimEnd(';');
+
+            // DODATO ZA WINDOWS MEDIA PLAYER
+            string encArgs = vEncArgs_cached ?? "-c:v libx264 -preset veryfast -crf 20 -profile:v high -level 4.1";
+
+            string args = $"-nostdin {inputs}" +
+                          $"-filter_complex \"{filterComplex}\" " +
+                          $"-map \"[vout]\" " +
+                          $"{encArgs} " +
+                          $"-pix_fmt yuv420p -an -y \"{outputPath}\"";
+
+            bool ok = await RunFFmpegAsync(args, ct);
+            return ok && File.Exists(outputPath) && new FileInfo(outputPath).Length > 1000
+                ? outputPath : null;
+        }
+
+        private string vEncArgs_cached = null;
 
         private void LogToMainWindow(string message)
         {

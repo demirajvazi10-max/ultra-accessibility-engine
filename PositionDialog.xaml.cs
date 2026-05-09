@@ -10,6 +10,11 @@ namespace UltraVideoEditor
 {
     public partial class PositionDialog : Window
     {
+        // Language helper
+        private string _LangCode => (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr";
+        private string L(string key) => LanguageManager.GetText(key, _LangCode);
+        private string LF(string key, params object[] args) => string.Format(LanguageManager.GetText(key, _LangCode), args);
+
         private readonly List<TimelineItem> _allItems;
         private readonly TimelineItem _currentItem;
         private readonly double _audioDuration;
@@ -114,7 +119,7 @@ namespace UltraVideoEditor
             }
             else
             {
-                WpfMessageBox.Show("Unesite validnu početnu poziciju (npr. 5 ili 10.5)", "Greška",
+                WpfMessageBox.Show(L("pd_invalid_start"), L("error_title"),
                     MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }

@@ -49,20 +49,20 @@
             <TextBlock Text="Boja teksta:" Foreground="White" Width="160" VerticalAlignment="Center"/>
             <ComboBox x:Name="cmbTextColor" Width="140" Height="30" Background="#2D2D2D" Foreground="White"
                       AutomationProperties.Name="Boja teksta, bira se iz liste">
-                <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF" IsSelected="True"/>
+                <ComboBoxItem Content="⚪ White" Tag="#FFFFFF" IsSelected="True"/>
                 <ComboBoxItem Content="⚫ Crna" Tag="#000000"/>
                 <ComboBoxItem Content="🔴 Crvena" Tag="#FF0000"/>
                 <ComboBoxItem Content="🟢 Zelena" Tag="#00FF00"/>
                 <ComboBoxItem Content="🔵 Plava" Tag="#0000FF"/>
-                <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
-                <ComboBoxItem Content="🟠 Narandžasta" Tag="#FFA500"/>
-                <ComboBoxItem Content="🟣 Ljubičasta" Tag="#800080"/>
+                <ComboBoxItem Content="🟡 Yellow" Tag="#FFFF00"/>
+                <ComboBoxItem Content="🟠 Orange" Tag="#FFA500"/>
+                <ComboBoxItem Content="🟣 Purple" Tag="#800080"/>
                 <ComboBoxItem Content="🩷 Roze" Tag="#FFC0CB"/>
-                <ComboBoxItem Content="🤎 Smeđa" Tag="#8B4513"/>
-                <ComboBoxItem Content="🩶 Siva" Tag="#808080"/>
-                <ComboBoxItem Content="💛 Zlatna" Tag="#FFD700"/>
-                <ComboBoxItem Content="💙 Tamnoplava" Tag="#00008B"/>
-                <ComboBoxItem Content="💚 Tamnozelena" Tag="#006400"/>
+                <ComboBoxItem Content="🤎 Brown" Tag="#8B4513"/>
+                <ComboBoxItem Content="🩶 Gray" Tag="#808080"/>
+                <ComboBoxItem Content="💛 Gold" Tag="#FFD700"/>
+                <ComboBoxItem Content="💙 Dark blue" Tag="#00008B"/>
+                <ComboBoxItem Content="💚 Dark green" Tag="#006400"/>
             </ComboBox>
         </StackPanel>
 
@@ -72,16 +72,16 @@
             <ComboBox x:Name="cmbBgColor" Width="140" Height="30" Background="#2D2D2D" Foreground="White"
                       AutomationProperties.Name="Boja pozadine, bira se iz liste">
                 <ComboBoxItem Content="⚫ Crna" Tag="#000000" IsSelected="True"/>
-                <ComboBoxItem Content="⚪ Bijela" Tag="#FFFFFF"/>
+                <ComboBoxItem Content="⚪ White" Tag="#FFFFFF"/>
                 <ComboBoxItem Content="🔴 Crvena" Tag="#FF0000"/>
                 <ComboBoxItem Content="🟢 Zelena" Tag="#00FF00"/>
                 <ComboBoxItem Content="🔵 Plava" Tag="#0000FF"/>
-                <ComboBoxItem Content="🟡 Žuta" Tag="#FFFF00"/>
-                <ComboBoxItem Content="🟠 Narandžasta" Tag="#FFA500"/>
-                <ComboBoxItem Content="🟣 Ljubičasta" Tag="#800080"/>
-                <ComboBoxItem Content="🩶 Siva" Tag="#808080"/>
-                <ComboBoxItem Content="💙 Tamnoplava" Tag="#00008B"/>
-                <ComboBoxItem Content="💚 Tamnozelena" Tag="#006400"/>
+                <ComboBoxItem Content="🟡 Yellow" Tag="#FFFF00"/>
+                <ComboBoxItem Content="🟠 Orange" Tag="#FFA500"/>
+                <ComboBoxItem Content="🟣 Purple" Tag="#800080"/>
+                <ComboBoxItem Content="🩶 Gray" Tag="#808080"/>
+                <ComboBoxItem Content="💙 Dark blue" Tag="#00008B"/>
+                <ComboBoxItem Content="💚 Dark green" Tag="#006400"/>
             </ComboBox>
         </StackPanel>
 

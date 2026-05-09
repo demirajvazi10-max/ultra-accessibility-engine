@@ -76,7 +76,7 @@ namespace UltraVideoEditor
                 stdoutTask.Wait();
 
                 if (proc.ExitCode != 0)
-                    throw new Exception("FFmpeg greška: " + stderrTask.Result.Substring(0, Math.Min(300, stderrTask.Result.Length)));
+                    throw new Exception(string.Format(LanguageManager.GetText("sae_ffmpeg_error", (System.Windows.Application.Current?.MainWindow as MainWindow)?._currentLanguage ?? "sr"), stderrTask.Result.Substring(0, Math.Min(300, stderrTask.Result.Length))));
             }
             finally
             {

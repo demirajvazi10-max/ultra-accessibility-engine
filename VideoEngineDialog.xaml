@@ -100,7 +100,7 @@
                     <Button x:Name="btnAnalyze" Content="ANALIZIRAJ"
                             Click="btnAnalyze_Click" Height="24" Margin="10,0,0,0"
                             Background="#1565C0" Foreground="White" FontSize="11"
-                            AutomationProperties.Name="Analiziraj stihove i generiši pregled shot liste"/>
+                            AutomationProperties.Name="Analyze lyrics and generate shot list preview"/>
                 </StackPanel>
                 <TextBox x:Name="txtLyrics" Height="85" TextWrapping="Wrap"
                          AcceptsReturn="True" Background="#2D2D2D" Foreground="White"
