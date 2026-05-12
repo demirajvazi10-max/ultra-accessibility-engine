@@ -1,5 +1,7 @@
 # Ultra Creative Suite
 
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ultracreativesuite)
+
 **The world's first professional video editor that is fully accessible to blind, low-vision, and sighted users — without compromise.**
 
 Built by a blind developer. Tested daily with JAWS for Windows.
@@ -54,7 +56,7 @@ Every feature works for blind, low-vision, and sighted users equally. Blind user
 ## Technical Stack
 
 | Component | Technology |
-|---|---|
+| --- | --- |
 | Language | C# / .NET 8 |
 | UI Framework | WPF (Windows Presentation Foundation) |
 | Render Engine | FFmpeg with NVENC GPU acceleration |
@@ -63,7 +65,7 @@ Every feature works for blind, low-vision, and sighted users equally. Blind user
 | AI Transcription | faster-whisper (large-v3 model) |
 | AI Text/Story | Ollama (llama3.2, local inference) |
 | Image Generation | Cloudflare Workers AI / Pollinations.ai |
-| Stock Media | Pixabay API / Freesound API |
+| Stock Media | Pixabay API |
 | Screen Reader | JAWS for Windows (primary), NVDA (compatible) |
 | Platform | Windows 10/11 (64-bit) |
 
@@ -72,7 +74,9 @@ Every feature works for blind, low-vision, and sighted users equally. Blind user
 ## Core Features
 
 ### AIVideoCreator
+
 Generates a complete video from a single audio file (song):
+
 - AI analyzes lyrics and detects mood, theme, and energy level
 - Automatically downloads matching stock footage from Pixabay
 - Applies mood-based color grading (warm, cool, desaturated, vivid)
@@ -84,6 +88,7 @@ Generates a complete video from a single audio file (song):
 - Preview list before render — JAWS reads all scenes with timing
 
 ### Render Engine
+
 - NVENC GPU-accelerated encoding (RTX/GTX cards)
 - Automatic fallback to CPU (libx264) if GPU unavailable
 - 4K (3840×2160) output tested on RTX 2060 Max-Q
@@ -92,12 +97,14 @@ Generates a complete video from a single audio file (song):
 - FastRender mode for quick previews
 
 ### AI Transcription
+
 - faster-whisper-xxl integration (large-v3 model)
 - float16 compute type on CUDA for GPU-accelerated transcription
 - SRT subtitle output with timestamp synchronization
 - Serbian language support
 
 ### Timeline Editor
+
 - Win32 native ListView (JAWS/NVDA compatible out of the box)
 - Undo/redo system
 - Keyframe animation support
@@ -118,17 +125,20 @@ Generates a complete video from a single audio file (song):
 ## Installation
 
 ### Prerequisites
+
 - Windows 10 or 11 (64-bit)
 - [.NET 8.0 Runtime](https://dotnet.microsoft.com/download)
 - FFmpeg — download from [ffmpeg.org](https://ffmpeg.org/download.html) and place `ffmpeg.exe` in `Ffmpeg\` subfolder
 - VLC media player — for video preview
 
 ### Optional (for AI features)
+
 - [Ollama](https://ollama.ai) with `llama3.2` model pulled
 - Cloudflare Workers AI API key (for image generation)
 - faster-whisper-xxl (for transcription)
 
 ### Build
+
 1. Clone the repository
 2. Open `UltraVideoEditor.csproj` in Visual Studio 2022
 3. Build (Ctrl+Shift+B)
@@ -140,7 +150,7 @@ Generates a complete video from a single audio file (song):
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
-|---|---|
+| --- | --- |
 | Arrow Up/Down | Navigate timeline clips |
 | Page Up/Down | Jump 5 clips |
 | Ctrl+Space | Play / Pause |
@@ -170,7 +180,6 @@ UltraVideoEditor/
 ├── NativeListViewBridge.cs    # Win32 interop for accessible timeline
 ├── BeatDetection.cs           # Audio beat/rhythm analysis
 ├── OllamaClient.cs            # Local AI inference (llama3.2)
-├── FreesoundClient.cs         # Ambient sound library integration
 ├── HardwareEncoderDetector.cs # NVENC auto-detection
 └── Ffmpeg/
     └── ffmpeg.exe             # (not included — download separately)
@@ -185,6 +194,16 @@ There is no professional video editing software that blind users can actually us
 Ultra Creative Suite exists to change that. It is the only editor where a blind person can open the application, import audio, generate a complete video with stock footage, effects, and subtitles, and render to 4K — all without sighted assistance.
 
 This project is being developed as part of an [NLnet Foundation](https://nlnet.nl) grant application under the NGI0 Commons Fund.
+
+---
+
+## Support the Project
+
+If Ultra Creative Suite is useful to you, or you believe accessible creative tools matter, consider supporting development:
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/ultracreativesuite)
+
+Every contribution helps keep this project alive and growing.
 
 ---
 
