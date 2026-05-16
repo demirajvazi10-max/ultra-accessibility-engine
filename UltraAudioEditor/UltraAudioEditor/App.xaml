@@ -1,0 +1,18 @@
+<Application x:Class="UltraAudioEditor.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:helpers="clr-namespace:UltraAudioEditor.Helpers"
+             StartupUri="Views/MainWindow.xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/Dark.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <helpers:BoolToMuteBrushConverter x:Key="BoolToMuteBrush"/>
+            <helpers:BoolToSoloBrushConverter x:Key="BoolToSoloBrush"/>
+            <helpers:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+            <helpers:InverseBoolConverter x:Key="InverseBool"/>
+            <helpers:ZeroToVisibilityConverter x:Key="ZeroToVisibilityConverter"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
